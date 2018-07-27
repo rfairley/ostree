@@ -1,156 +1,16 @@
-Submitting patches
-------------------
+# Contributing to OSTree
 
-A majority of current maintainers prefer the Github pull request
-model, and this motivated moving the primary git repository to
-<https://github.com/ostreedev/ostree>.
-
-However, we do not use the "Merge pull request" button, because we do
-not like merge commits for one-patch pull requests, among other
-reasons.  See [this issue](https://github.com/isaacs/github/issues/2)
-for more information.  Instead, we use an instance of
-[Homu](https://github.com/servo/homu), currently known as
-`cgwalters-bot`.
-
-As a review proceeds, the preferred method is to push `fixup!`
-commits via `git commit --fixup`.  Homu knows how to use
-`--autosquash` when performing the final merge.  See the
-[Git documentation](https://git-scm.com/docs/git-rebase) for more
-information.
-
-Alternative methods if you don't like Github (also fully supported):
-
- 1. Send mail to <ostree-list@gnome.org>, with the patch attached
- 1. Attach them to <https://bugzilla.gnome.org/>
-
-It is likely however once a patch is ready to apply a maintainer
-will push it to a github PR, and merge via Homu.
-
-Commit message style
---------------------
-
-Please look at `git log` and match the commit log style, which is very
-similar to the
-[Linux kernel](https://git.kernel.org/cgit/linux/kernel/git/torvalds/linux.git).
-
-You may use `Signed-off-by`, but we're not requiring it.
-
-Running the test suite
-----------------------
-
-OSTree uses both `make check` and supports the
-[Installed Tests](https://wiki.gnome.org/GnomeGoals/InstalledTests)
-model as well (if `--enable-installed-tests` is provided).
-
-Coding style
-------------
-
-Indentation is GNU.  Files should start with the appropriate mode lines.
-
-Use GCC `__attribute__((cleanup))` wherever possible.  If interacting
-with a third party library, try defining local cleanup macros.
-
-Use GError and GCancellable where appropriate.
-
-Prefer returning `gboolean` to signal success/failure, and have output
-values as parameters.
-
-Prefer linear control flow inside functions (aside from standard
-loops).  In other words, avoid "early exits" or use of `goto` besides
-`goto out;`.
-
-This is an example of an "early exit":
-
-    static gboolean
-    myfunc (...)
-    {
-        gboolean ret = FALSE;
-
-        /* some code */
-
-        /* some more code */
-
-        if (condition)
-          return FALSE;
-
-        /* some more code */
-
-        ret = TRUE;
-      out:
-        return ret;
-    }
-
-If you must shortcut, use:
-
-    if (condition)
-      {
-        ret = TRUE;
-        goto out;
-      }
-
-A consequence of this restriction is that you are encouraged to avoid
-deep nesting of loops or conditionals.  Create internal static helper
-functions, particularly inside loops.  For example, rather than:
-
-    while (condition)
-      {
-        /* some code */
-        if (condition)
-          {
-             for (i = 0; i < somevalue; i++)
-               {
-                  if (condition)
-                    {
-                      /* deeply nested code */
-                    }
-
-                    /* more nested code */
-               }
-          }
-      }
-
-Instead do this:
-
-    static gboolean
-    helperfunc (..., GError **error)
-    {
-      if (condition)
-       {
-         /* deeply nested code */
-       }
-
-      /* more nested code */
-
-      return ret;
-    }
-
-    while (condition)
-      {
-        /* some code */
-        if (!condition)
-          continue;
-
-        for (i = 0; i < somevalue; i++)
-          {
-            if (!helperfunc (..., i, error))
-              goto out;
-          }
-      }
-
-Walkthrough
------------
-
-# Walkthrough: adding a basic builtin command to ostree
-
-The following tutorial leads you through forking, building, adding a command, testing the command, and submitting the change.
+The following guide is about OSTree forking, building, adding a command, testing the command, and submitting the change.
 
 - [Getting started](#getting-started)
-- [Building ostree](#building-ostree)
+- [Building OSTRree](#building-ostree)
     - [Install Build Dependencies](#install-build-dep)
-    - [Autotool Commands Ostree Build](#ostree-build-commands)
+    - [Autotool Commands OSTRee Build](#ostree-build-commands)
 - [Testing a Build](#test-build)
     - [Testing in a Container](#test-in-container)
     - [Testing in a Virtual Machine](#test-in-vm)
+
+### Turorial: Adding a basic builtin command to OSTree
 - [Modifying OSTree](#modifying-ostree)
 - [OSTree Tests](#test-ostree)
 - [Submitting a Patch](#submit-patch)
@@ -173,7 +33,7 @@ Make a branch from master for your patch.
 $ git checkout -b <name-of-branch>
 ```
 
-## [Building ostree](#building-ostree)
+## [Building OSTree](#building-ostree)
 
 ### [Install Build Dependencies](#install-build-dep)
 
@@ -182,7 +42,7 @@ $ sudo dnf builddep ostree
 $ sudo dnf install @buildsys-build
 ```
 
-### [Autotool Commands Ostree Build](#ostree-build-commands)
+### [Autotool Commands OSTree Build](#ostree-build-commands)
 
 ```bash
 git submodule update --init
@@ -196,11 +56,11 @@ make install DESTDIR=/path/to/install/binary
 
 For more information and issues with `./autogen.sh`, `./configure` or `make` see [Build Dependencies]().
 
-**Note**: It is prefered to build and test ostree in a container or virtual machine.  
+**Note**: It is prefered to build and test OSTree in a container or virtual machine.  
 
 ## [Testing a Build](#test-build)
 
-Testing Ostree could interfere with the state of your machine. To avoid this, it is preferable to test and build ostree inside a container or virtual machine.
+Testing OSTree could interfere with the state of your machine. To avoid this, it is preferable to test and build OSTree inside a container or virtual machine.
 
 ### [Testing in a Container](#test-in-container)
 
@@ -264,9 +124,9 @@ The state of the container will not be saved when the shell prompt exits. Best p
 
 **Testing in a Container Workflow**
 
-1. Edit the changes to ostree on your local machine.
+1. Edit the changes to OSTree on your local machine.
 2. `git add` your changed files, `git commit -m "commit message"` and then `git push origin <name of local branch>`
-3. From within the `ostree-testing` container, make sure your changes are pulled onto the ostree repo in the container. The run the [ostree build commands](#ostree-build-commands):
+3. From within the `ostree-testing` container, make sure your changes are pulled onto the `ostree` repo in the container. The run the [ostree build commands](#ostree-build-commands):
 
 ```
 git submodule update --init && \
@@ -275,7 +135,7 @@ env NOCONFIGURE=1 ./autogen.sh && \
 make && \
 make install
 ```
-4. `make install` will install ostree in the default location in the guest OS.
+4. `make install` will install OSTree in the default location in the guest OS.
 
 ### [Testing in a Virtual Machine](#test-in-vm)
 
@@ -283,17 +143,19 @@ See this guide on creating an [Atomic Host Vagrant VM](https://gist.github.com/B
 
 To test a build on the Atomic Host Vagrant VM, simply `scp -r <ostree binary location> vagrant@<ip-address>:~`. You can find the ip of a Vagrant VM by running `vagrant ssh-config` in the same directory as the `Vagrantfile`.
 
-Run `vagrant ssh` to login to the VM. To override the `Read-only file system` warning, run `ostree admin unlock`. Now replace the original ostree binary with the new one by running `sudo mv ~/ostree /usr/bin/ostree`.
+Run `vagrant ssh` to login to the VM. To override the `Read-only file system` warning, run `ostree admin unlock`. Now replace the original OSTree binary with the new one by running `sudo mv ~/ostree /usr/bin/ostree`.
 
-If `which ostree` doesn't return an error then the `mv` was successful. Test the new Ostree binary, by running the ostree commands that you've changed.
+If `which ostree` doesn't return an error then the `mv` was successful. Test the new OSTree binary, by running the OSTree commands that you've changed.
+
+# Tutorial: Adding a basic builtin command to ostree
 
 ## [Modifying OSTree](#modifying-ostree)
 
 This will add a command which prints `Hello OSTree!` when `ostree hello-ostree` is entered.
 
-1. Open the ostree code in an editor or IDE of your choice. Having the ability to ["go to definition" helps greatly in navigating](#ide-configuration.md).
+1. Open the OSTree code in an editor or IDE of your choice. Having the ability to ["go to definition" helps greatly in navigating](#ide-configuration.md).
 
-2. Create a file in `src/ostree` named `ot-builtin-hello-ostree.c`. Code that lives in here belongs to ostree, and uses functionality from libostree.
+2. Create a file in `src/ostree` named `ot-builtin-hello-ostree.c`. Code that lives in here belongs to OSTree, and uses functionality from libostree.
 
 3. Add the following to `ot-builtin-hello-ostree.c`:
 
@@ -445,9 +307,50 @@ You should make sure your commits are placed on top of the latest changes from `
 $ git pull --rebase upstream master
 ```
 
-To submit your patch, open a pull request from your forked repository. Most often, you'll be merging into ostree:master from <username>:<branch name>.
+To submit your patch, open a pull request from your forked repository. Most often, you'll be merging into `ostree:master` from `<username>:<branch name>`.
 
 If some of your changes are complete and you would like feedback, you may also open a pull request that has WIP (Work In Progess) in the title.
+
+Submitting patches
+------------------
+
+A majority of current maintainers prefer the Github pull request
+model, and this motivated moving the primary git repository to
+<https://github.com/ostreedev/ostree>.
+
+However, we do not use the "Merge pull request" button, because we do
+not like merge commits for one-patch pull requests, among other
+reasons.  See [this issue](https://github.com/isaacs/github/issues/2)
+for more information.  Instead, we use an instance of
+[Homu](https://github.com/servo/homu), currently known as
+`cgwalters-bot`.
+
+As a review proceeds, the preferred method is to push `fixup!`
+commits via `git commit --fixup`.  Homu knows how to use
+`--autosquash` when performing the final merge.  See the
+[Git documentation](https://git-scm.com/docs/git-rebase) for more
+information.
+
+Alternative methods if you don't like Github (also fully supported):
+
+ 1. Send mail to <ostree-list@gnome.org>, with the patch attached
+ 1. Attach them to <https://bugzilla.gnome.org/>
+
+It is likely however once a patch is ready to apply a maintainer
+will push it to a github PR, and merge via Homu.
+
+Commit message style
+--------------------
+
+Please look at `git log` and match the commit log style, which is very
+similar to the
+[Linux kernel](https://git.kernel.org/cgit/linux/kernel/git/torvalds/linux.git).
+
+You may use `Signed-off-by`, but we're not requiring it.
+
+
+**TODO**: Add rules about commit message and link the source
+
 
 ## [Returning Workflow](#return-workflow)
 
@@ -458,3 +361,111 @@ git fetch upstream
 git merge upstream/master
 git checkout -b <name-of-patch>
 ```
+
+----
+# Nothing changed in content below, simply copy and pasted it from above and move it down here
+
+
+Running the test suite
+----------------------
+
+OSTree uses both `make check` and supports the
+[Installed Tests](https://wiki.gnome.org/GnomeGoals/InstalledTests)
+model as well (if `--enable-installed-tests` is provided).
+
+Coding style
+------------
+
+Indentation is GNU.  Files should start with the appropriate mode lines.
+
+Use GCC `__attribute__((cleanup))` wherever possible.  If interacting
+with a third party library, try defining local cleanup macros.
+
+Use GError and GCancellable where appropriate.
+
+Prefer returning `gboolean` to signal success/failure, and have output
+values as parameters.
+
+Prefer linear control flow inside functions (aside from standard
+loops).  In other words, avoid "early exits" or use of `goto` besides
+`goto out;`.
+
+This is an example of an "early exit":
+
+    static gboolean
+    myfunc (...)
+    {
+        gboolean ret = FALSE;
+
+        /* some code */
+
+        /* some more code */
+
+        if (condition)
+          return FALSE;
+
+        /* some more code */
+
+        ret = TRUE;
+      out:
+        return ret;
+    }
+
+If you must shortcut, use:
+
+    if (condition)
+      {
+        ret = TRUE;
+        goto out;
+      }
+
+A consequence of this restriction is that you are encouraged to avoid
+deep nesting of loops or conditionals.  Create internal static helper
+functions, particularly inside loops.  For example, rather than:
+
+    while (condition)
+      {
+        /* some code */
+        if (condition)
+          {
+             for (i = 0; i < somevalue; i++)
+               {
+                  if (condition)
+                    {
+                      /* deeply nested code */
+                    }
+
+                    /* more nested code */
+               }
+          }
+      }
+
+Instead do this:
+
+    static gboolean
+    helperfunc (..., GError **error)
+    {
+      if (condition)
+       {
+         /* deeply nested code */
+       }
+
+      /* more nested code */
+
+      return ret;
+    }
+
+    while (condition)
+      {
+        /* some code */
+        if (!condition)
+          continue;
+
+        for (i = 0; i < somevalue; i++)
+          {
+            if (!helperfunc (..., i, error))
+              goto out;
+          }
+      }
+
+
