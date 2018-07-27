@@ -5,16 +5,16 @@ The following guide is about OSTree forking, building, adding a command, testing
 - [Getting started](#getting-started)
 - [Building OSTRree](#building-ostree)
     - [Install Build Dependencies](#install-build-dep)
-    - [Autotool Commands OSTRee Build](#ostree-build-commands)
+    - [OSTRee Build Commands](#ostree-build-commands)
 - [Testing a Build](#test-build)
     - [Testing in a Container](#test-in-container)
     - [Testing in a Virtual Machine](#test-in-vm)
-
-### Turorial: Adding a basic builtin command to OSTree
-- [Modifying OSTree](#modifying-ostree)
-- [OSTree Tests](#test-ostree)
-- [Submitting a Patch](#submit-patch)
-- [Returning Workflow](#return-workflow)
+- [Turorial: Adding a basic builtin command to OSTree]()
+    - [Modifying OSTree](#modifying-ostree)
+    - [OSTree Tests](#test-ostree)
+    - [Submitting a Patch](#submit-patch)
+    - [Commit message style](#commit-message-style)
+    - [Returning Workflow](#return-workflow)
 
 ---
 
@@ -31,6 +31,7 @@ $ git branch --set-upstream-to=upstream/master master
 Make a branch from master for your patch.
 ```bash
 $ git checkout -b <name-of-branch>
+$ git branch --set-upstream-to=upstream/master <name-of-branch>
 ```
 
 ## [Building OSTree](#building-ostree)
@@ -42,7 +43,7 @@ $ sudo dnf builddep ostree
 $ sudo dnf install @buildsys-build
 ```
 
-### [Autotool Commands OSTree Build](#ostree-build-commands)
+### [OSTree Build Commands](#ostree-build-commands)
 
 ```bash
 git submodule update --init
@@ -54,11 +55,11 @@ make install DESTDIR=/path/to/install/binary
 
 `make install` will generate files for `/etc` and `/usr`
 
-For more information and issues with `./autogen.sh`, `./configure` or `make` see [Build Dependencies]().
-
-**Note**: It is prefered to build and test OSTree in a container or virtual machine.  
+For more information and issues with `./autogen.sh`, `./configure` or `make` see [Build Dependencies](/docs/misc/build-dependencies.md).
 
 ## [Testing a Build](#test-build)
+
+**TODO**: This sentense below needs more context and perhaps needs to be rephrased.
 
 Testing OSTree could interfere with the state of your machine. To avoid this, it is preferable to test and build OSTree inside a container or virtual machine.
 
@@ -118,7 +119,7 @@ $ docker run -it --rm --entrypoint /bin/sh --name ostree-testing ostree-fedora-t
 ```
 **Note**:
 
-`--rm` option removes the name of the container i.e. `ostree-testing` whenever `exit` is initiated within the container's shell prompt `#`. This is so that the container name `ostree-testing` can be used again, otherwise remove it manually by running `docker rm <container name>`.
+`--rm` option removes the name of the container i.e. `ostree-testing` whenever `exit` is initiated within the container's shell prompt `#`. This is so that the container name `ostree-testing` can be re-used, otherwise remove it manually by running `docker rm <container name>`.
 
 The state of the container will not be saved when the shell prompt exits. Best practice is modify the Dockerfile to modify the image.
 
@@ -126,7 +127,7 @@ The state of the container will not be saved when the shell prompt exits. Best p
 
 1. Edit the changes to OSTree on your local machine.
 2. `git add` your changed files, `git commit -m "commit message"` and then `git push origin <name of local branch>`
-3. From within the `ostree-testing` container, make sure your changes are pulled onto the `ostree` repo in the container. The run the [ostree build commands](#ostree-build-commands):
+3. From within the `ostree-testing` container, make sure your changes are pulled onto the `ostree` repo in the container. Then run the [ostree build commands](#ostree-build-commands):
 
 ```
 git submodule update --init && \
@@ -135,17 +136,17 @@ env NOCONFIGURE=1 ./autogen.sh && \
 make && \
 make install
 ```
-4. `make install` will install OSTree in the default location in the guest OS.
+4. `make install` will install OSTree in the default location of the guest OS.
 
 ### [Testing in a Virtual Machine](#test-in-vm)
 
 See this guide on creating an [Atomic Host Vagrant VM](https://gist.github.com/Bubblemelon/bd9f3cf429d9e04be52f9987baed53c8).
 
-To test a build on the Atomic Host Vagrant VM, simply `scp -r <ostree binary location> vagrant@<ip-address>:~`. You can find the ip of a Vagrant VM by running `vagrant ssh-config` in the same directory as the `Vagrantfile`.
+To test a build on the Atomic Host Vagrant VM, simply `scp -r <ostree binary location> vagrant@<ip-address>:~`. You can find the IP address of a Vagrant VM by running `vagrant ssh-config` in the same directory as the `Vagrantfile`.
 
 Run `vagrant ssh` to login to the VM. To override the `Read-only file system` warning, run `ostree admin unlock`. Now replace the original OSTree binary with the new one by running `sudo mv ~/ostree /usr/bin/ostree`.
 
-If `which ostree` doesn't return an error then the `mv` was successful. Test the new OSTree binary, by running the OSTree commands that you've changed.
+If `which ostree` doesn't return an error then the `mv` command was successful. Test the new OSTree binary, by running the OSTree commands that you've changed.
 
 # Tutorial: Adding a basic builtin command to ostree
 
@@ -153,7 +154,7 @@ If `which ostree` doesn't return an error then the `mv` was successful. Test the
 
 This will add a command which prints `Hello OSTree!` when `ostree hello-ostree` is entered.
 
-1. Open the OSTree code in an editor or IDE of your choice. Having the ability to ["go to definition" helps greatly in navigating](#ide-configuration.md).
+1. Open the OSTree code in an editor or IDE of your choice. Having the ability to ["go to definition" helps greatly in navigating](/docs/misc/ide-configuration.md).
 
 2. Create a file in `src/ostree` named `ot-builtin-hello-ostree.c`. Code that lives in here belongs to OSTree, and uses functionality from libostree.
 
@@ -318,7 +319,9 @@ A majority of current maintainers prefer the Github pull request
 model, and this motivated moving the primary git repository to
 <https://github.com/ostreedev/ostree>.
 
-However, we do not use the "Merge pull request" button, because we do
+**TO DO**: Is the below comment still valid? I didn't do what was mentioned here. --cheryl 
+
+<!-- However, we do not use the "Merge pull request" button, because we do
 not like merge commits for one-patch pull requests, among other
 reasons.  See [this issue](https://github.com/isaacs/github/issues/2)
 for more information.  Instead, we use an instance of
@@ -337,10 +340,9 @@ Alternative methods if you don't like Github (also fully supported):
  1. Attach them to <https://bugzilla.gnome.org/>
 
 It is likely however once a patch is ready to apply a maintainer
-will push it to a github PR, and merge via Homu.
+will push it to a github PR, and merge via Homu. -->
 
-Commit message style
---------------------
+## [Commit message style](#commit-message-style)
 
 Please look at `git log` and match the commit log style, which is very
 similar to the
@@ -348,22 +350,52 @@ similar to the
 
 You may use `Signed-off-by`, but we're not requiring it.
 
+**TODO**: Add rules about commit message and link the source, Editing committed message may be unnecessary...
 
-**TODO**: Add rules about commit message and link the source
+**General Commit Message Guidelines**:  
 
+1. Title
+    - Specify the context or category of the changes .e.g `lib` for library changes, `docs` for document changes, `bin/<command-name>` for command changes, etc.
+    - Begin the title with the first letter of the first word capitalized.
+    - Aim for less than 50 characters, otherwise 72 characters max.
+    - Do not end the title with a period. 
+    - Use an [imperative tone](https://en.wikipedia.org/wiki/Imperative_mood).
+2. Body
+    - Separate the body with a blank line after the title.
+    - Begin a paragraph with the first letter of the first word capitalized.
+    - Each paragraph should have be within 72 characters.
+    - Content should be about what was changed and why this change was made.
+    - Closes: #issue-number. If the commit resolve an issues, otherwise it is not needed.
+
+
+Commit Message example:
+
+```bash
+<context>: Less than 50 Characters for subject title
+
+A paragraph of the body should be within 72 characters.
+
+This paragraph is also less than 72 characters. 
+
+Closes: #issue-number
+```
+
+**Editting a Committed Message:**
+
+To edit the message from the most recent commit run `git commit --amend`. To change older commits on the branch use `git rebase -i`. For a successful rebase have the branch track `upstream master`. Once the changes have been made and saved, run `git push --force origin <branch-name>`.
 
 ## [Returning Workflow](#return-workflow)
 
 When returning to make a new patch, do the following to update your fork with the latest changes to master:
 
-```
+```bash
 git fetch upstream
 git merge upstream/master
 git checkout -b <name-of-patch>
 ```
 
 ----
-# Nothing changed in content below, simply copy and pasted it from above and move it down here
+# Nothing changed in content below, was simply copied and pasted from above and moved down here
 
 
 Running the test suite
