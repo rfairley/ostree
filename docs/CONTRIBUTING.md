@@ -2,23 +2,23 @@
 
 The following guide is about OSTree forking, building, adding a command, testing the command, and submitting the change.
 
-- [Getting started](#getting-started)
-- [Building OSTRree](#building-ostree)
-    - [Install Build Dependencies](#install-build-dep)
-    - [OSTRee Build Commands](#ostree-build-commands)
-- [Testing a Build](#test-build)
-    - [Testing in a Container](#test-in-container)
-    - [Testing in a Virtual Machine](#test-in-vm)
-- [Turorial: Adding a basic builtin command to OSTree]()
+- [Getting Started](#getting-started)
+- [Building OSTree](#building-ostree)
+    - [Install Build Dependencies](#install-build-dependencies)
+    - [OSTree Build Commands](#ostree-build-commands)
+- [Testing a Build](#testing-a-build)
+    - [Testing in a Container](#testing-in-a-container)
+    - [Testing in a Virtual Machine](#testing-in-a-virtual-machine)
+- [Tutorial: Adding a basic builtin command to OSTree](#tutorial-adding-a-basic-builtin-command-to-ostree)
     - [Modifying OSTree](#modifying-ostree)
-    - [OSTree Tests](#test-ostree)
-    - [Submitting a Patch](#submit-patch)
+    - [OSTree tests](#ostree-tests)
+    - [Submitting patch](#submitting-a-patch)
     - [Commit message style](#commit-message-style)
-    - [Returning Workflow](#return-workflow)
+    - [Returning workflow](#returning-workflow)
 
 ---
 
-## [Getting started](#getting-started)
+## [Getting Started](#getting-started)
 
 Fork https://github.com/ostreedev/ostree, the run the following commands.
 
@@ -36,7 +36,7 @@ $ git branch --set-upstream-to=upstream/master <name-of-branch>
 
 ## [Building OSTree](#building-ostree)
 
-### [Install Build Dependencies](#install-build-dep)
+### [Install Build Dependencies](#install-build-dependencies)
 
 ```bash
 $ sudo dnf builddep ostree
@@ -57,13 +57,13 @@ make install DESTDIR=/path/to/install/binary
 
 For more information and issues with `./autogen.sh`, `./configure` or `make` see [Build Dependencies](/docs/misc/build-dependencies.md).
 
-## [Testing a Build](#test-build)
+## [Testing a Build](#testing-a-build)
 
 **TODO**: This sentense below needs more context and perhaps needs to be rephrased.
 
 Testing OSTree could interfere with the state of your machine. To avoid this, it is preferable to test and build OSTree inside a container or virtual machine.
 
-### [Testing in a Container](#test-in-container)
+### [Testing in a Container](#testing-in-a-container)
 
 Docker is the preferred containerization tool. Follow this guide to [install Docker on your host machine](https://docs.docker.com/v17.09/engine/installation/linux/docker-ce/fedora/). You may need to follow this [post-installation guide for Docker](https://docs.docker.com/v17.09/engine/installation/linux/linux-postinstall/) if you would like to run Docker as a non-root user on a Linux based host machine.
 
@@ -138,7 +138,7 @@ make install
 ```
 4. `make install` will install OSTree in the default location of the guest OS.
 
-### [Testing in a Virtual Machine](#test-in-vm)
+### [Testing in a Virtual Machine](#testing-in-a-virtual-machine)
 
 See this guide on creating an [Atomic Host Vagrant VM](https://gist.github.com/Bubblemelon/bd9f3cf429d9e04be52f9987baed53c8).
 
@@ -234,7 +234,7 @@ This will add a command which prints `Hello OSTree!` when `ostree hello-ostree` 
     Hello OSTree!
     ```
 
-## [OSTree Tests](#test-ostree)
+## [OSTree Tests](#ostree-tests)
 
 Tests for OSTree are done by shell scripting, by running OSTree commands and examining output. These steps will go through adding a test for `hello-ostree`.
 
@@ -298,7 +298,7 @@ Tests for OSTree are done by shell scripting, by running OSTree commands and exa
     ============================================================================
     ```
 
-## [Submitting a Patch](#submit-patch)
+## [Submitting a patch](#submitting-a-patch)
 
 After you have committed your changes and tested, you are ready to submit your patch!
 
@@ -319,7 +319,7 @@ A majority of current maintainers prefer the Github pull request
 model, and this motivated moving the primary git repository to
 <https://github.com/ostreedev/ostree>.
 
-**TO DO**: Is the below comment still valid? I didn't do what was mentioned here. --cheryl 
+**TO DO**: Is the below comment still valid? I didn't do what was mentioned here. --cheryl
 
 <!-- However, we do not use the "Merge pull request" button, because we do
 not like merge commits for one-patch pull requests, among other
@@ -358,7 +358,7 @@ You may use `Signed-off-by`, but we're not requiring it.
     - Specify the context or category of the changes .e.g `lib` for library changes, `docs` for document changes, `bin/<command-name>` for command changes, etc.
     - Begin the title with the first letter of the first word capitalized.
     - Aim for less than 50 characters, otherwise 72 characters max.
-    - Do not end the title with a period. 
+    - Do not end the title with a period.
     - Use an [imperative tone](https://en.wikipedia.org/wiki/Imperative_mood).
 2. Body
     - Separate the body with a blank line after the title.
@@ -375,7 +375,7 @@ Commit Message example:
 
 A paragraph of the body should be within 72 characters.
 
-This paragraph is also less than 72 characters. 
+This paragraph is also less than 72 characters.
 
 Closes: #issue-number
 ```
@@ -384,7 +384,7 @@ Closes: #issue-number
 
 To edit the message from the most recent commit run `git commit --amend`. To change older commits on the branch use `git rebase -i`. For a successful rebase have the branch track `upstream master`. Once the changes have been made and saved, run `git push --force origin <branch-name>`.
 
-## [Returning Workflow](#return-workflow)
+## [Returning workflow](#returning-workflow)
 
 When returning to make a new patch, do the following to update your fork with the latest changes to master:
 
@@ -499,5 +499,3 @@ Instead do this:
               goto out;
           }
       }
-
-
