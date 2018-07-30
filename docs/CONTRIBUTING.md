@@ -12,7 +12,7 @@ The following guide is about OSTree forking, building, adding a command, testing
 - [Tutorial: Adding a basic builtin command to OSTree](#tutorial-adding-a-basic-builtin-command-to-ostree)
     - [Modifying OSTree](#modifying-ostree)
     - [OSTree tests](#ostree-tests)
-    - [Submitting patch](#submitting-a-patch)
+    - [Submitting a patch](#submitting-a-patch)
     - [Commit message style](#commit-message-style)
     - [Returning workflow](#returning-workflow)
 
