@@ -31,7 +31,8 @@ G_BEGIN_DECLS
  * @osname:
  * @csum: OSTree checksum of tree
  * @deployserial: How many times this particular csum appears in deployment list
- * @bootcsum: Checksum of kernel+initramfs
+ * @bootcsum: Checksum of kernel+initramfs+devicetree
+ * @bootsize: Size in bytes of kernel+initramfs+devicetree
  * @bootserial: An integer assigned to this tree per its ${bootcsum}
  * @bootconfig: Bootloader configuration
  * @origin: How to construct an upgraded version of this tree
@@ -47,6 +48,7 @@ struct _OstreeDeployment
   char *csum;
   int deployserial;
   char *bootcsum;
+  int bootsize;
   int bootserial;
   OstreeBootconfigParser *bootconfig;
   GKeyFile *origin;

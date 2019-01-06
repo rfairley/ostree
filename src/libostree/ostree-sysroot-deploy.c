@@ -105,6 +105,7 @@ install_into_boot (OstreeSePolicy *sepolicy,
                    const char *src_subpath,
                    int         dest_dfd,
                    const char *dest_subpath,
+                   // int remaining_install_space,
                    OstreeSysrootDebugFlags flags,
                    GCancellable  *cancellable,
                    GError       **error)
@@ -887,7 +888,9 @@ typedef struct {
   char *devicetree_srcpath;
   char *devicetree_namever;
   char *bootcsum;
+  int bootsize;
 } OstreeKernelLayout;
+
 static void
 _ostree_kernel_layout_free (OstreeKernelLayout *layout)
 {
@@ -981,16 +984,28 @@ get_kernel_from_tree_usrlib_modules (int                  deployment_dfd,
       return TRUE;
     }
 
+  // TODO: get size of kernel/initramfs around here and add to new field
+  // in OstreeDeployment
+
   /* We found a module directory, compute the checksum */
   g_auto(OtChecksum) checksum = { 0, };
+  int bootsize = 0;
   ot_checksum_init (&checksum);
   glnx_autofd int fd = -1;
+  struct stat stbuf;
+
   /* Checksum the kernel */
   if (!glnx_openat_rdonly (ret_layout->boot_dfd, "vmlinuz", TRUE, &fd, error))
     return FALSE;
   g_autoptr(GInputStream) in = g_unix_input_stream_new (fd, FALSE);
   if (!ot_gio_splice_update_checksum (NULL, in, &checksum, cancellable, error))
     return FALSE;
+
+  /* Get the size of the kernel */
+  if (!glnx_fstatat(ret_layout->boot_dfd, ret_layout->kernel_srcpath, &stbuf, 0, error))
+    return FALSE;
+  bootsize += stbuf.st_size;
+
   g_clear_object (&in);
   glnx_close_fd (&fd);
 
@@ -1015,10 +1030,16 @@ get_kernel_from_tree_usrlib_modules (int                  deployment_dfd,
       g_assert (initramfs_path);
       ret_layout->initramfs_srcpath = g_strdup (initramfs_path);
       ret_layout->initramfs_namever = g_strdup_printf ("initramfs-%s.img", kver);
+
       in = g_unix_input_stream_new (fd, FALSE);
       if (!ot_gio_splice_update_checksum (NULL, in, &checksum, cancellable, error))
         return FALSE;
+
+      if (!glnx_fstatat(ret_layout->boot_dfd, ret_layout->initramfs_srcpath, &stbuf, 0, error))
+        return FALSE;
+      bootsize += stbuf.st_size;
     }
+
   g_clear_object (&in);
   glnx_close_fd (&fd);
 
@@ -1028,9 +1049,14 @@ get_kernel_from_tree_usrlib_modules (int                  deployment_dfd,
     {
       ret_layout->devicetree_srcpath = g_strdup ("devicetree");
       ret_layout->devicetree_namever = g_strdup_printf ("devicetree-%s", kver);
+
       in = g_unix_input_stream_new (fd, FALSE);
       if (!ot_gio_splice_update_checksum (NULL, in, &checksum, cancellable, error))
         return FALSE;
+
+      if (!glnx_fstatat(ret_layout->boot_dfd, ret_layout->devicetree_srcpath, &stbuf, 0, error))
+        return FALSE;
+      bootsize += stbuf.st_size;
     }
 
   g_clear_object (&in);
@@ -1039,6 +1065,8 @@ get_kernel_from_tree_usrlib_modules (int                  deployment_dfd,
   char hexdigest[OSTREE_SHA256_STRING_LEN+1];
   ot_checksum_get_hexdigest (&checksum, hexdigest, sizeof (hexdigest));
   ret_layout->bootcsum = g_strdup (hexdigest);
+
+  ret_layout->bootsize = bootsize;
 
   *out_layout = g_steal_pointer (&ret_layout);
   return TRUE;
@@ -1056,6 +1084,8 @@ get_kernel_from_tree_legacy_layouts (int                  deployment_dfd,
   g_autofree char *initramfs_checksum = NULL;
   g_autofree char *devicetree_checksum = NULL;
   g_autoptr(OstreeKernelLayout) ret_layout = _ostree_kernel_layout_new ();
+  int bootsize = 0;
+  struct stat stbuf;
 
   for (guint i = 0; i < G_N_ELEMENTS (legacy_paths); i++)
     {
@@ -1148,6 +1178,10 @@ get_kernel_from_tree_legacy_layouts (int                  deployment_dfd,
       return TRUE;
     }
 
+  if (!glnx_fstatat(ret_layout->boot_dfd, ret_layout->kernel_srcpath, &stbuf, 0, error))
+    return FALSE;
+  bootsize += stbuf.st_size;
+
   /* The kernel/initramfs checksums must be the same */
   if (ret_layout->initramfs_srcpath != NULL)
     {
@@ -1155,6 +1189,9 @@ get_kernel_from_tree_legacy_layouts (int                  deployment_dfd,
       g_assert (initramfs_checksum != NULL);
       if (strcmp (kernel_checksum, initramfs_checksum) != 0)
         return glnx_throw (error, "Mismatched kernel checksum vs initrd");
+      if (!glnx_fstatat(ret_layout->boot_dfd, ret_layout->initramfs_srcpath, &stbuf, 0, error))
+        return FALSE;
+      bootsize += stbuf.st_size;
     }
 
   /* The kernel/devicetree checksums must be the same */
@@ -1168,9 +1205,13 @@ get_kernel_from_tree_legacy_layouts (int                  deployment_dfd,
                        "Mismatched kernel checksum vs device tree in tree");
           return FALSE;
         }
+      if (!glnx_fstatat(ret_layout->boot_dfd, ret_layout->devicetree_srcpath, &stbuf, 0, error))
+        return FALSE;
+      bootsize += stbuf.st_size;
     }
 
   ret_layout->bootcsum = g_steal_pointer (&kernel_checksum);
+  ret_layout->bootsize = bootsize;
 
   *out_layout = g_steal_pointer (&ret_layout);
   return TRUE;
@@ -1586,6 +1627,25 @@ parse_os_release (const char *contents,
   return ret;
 }
 
+static gboolean
+check_can_complete_copy_xdev (int             space_needed,
+                              int             dest_space_free,
+                              struct stat    *src_stbuf,
+                              struct stat    *dest_stbuf,
+                              GError        **error)
+{
+  if (!src_stbuf || !dest_stbuf)
+    return glnx_throw(error, "unallocated stbuf(s) given");
+  /* If size to copy exceeds space free, and a cross-device
+  copy is needed (src and dest are on different devices),
+  then we cannot proceed. */
+  if (space_needed > dest_space_free && src_stbuf->st_dev != dest_stbuf->st_dev)
+    return glnx_throw(error, "/boot has %d bytes free but install requires %d bytes",
+                      dest_space_free, space_needed);
+  return TRUE;
+}
+
+
 /* Given @deployment, prepare it to be booted; basically copying its
  * kernel/initramfs into /boot/ostree (if needed) and writing out an entry in
  * /boot/loader/entries.
@@ -1599,7 +1659,6 @@ install_deployment_kernel (OstreeSysroot   *sysroot,
                            gboolean        show_osname,
                            GCancellable   *cancellable,
                            GError        **error)
-
 {
   GLNX_AUTO_PREFIX_ERROR ("Installing kernel", error);
   OstreeBootconfigParser *bootconfig = ostree_deployment_get_bootconfig (deployment);
@@ -1626,7 +1685,15 @@ install_deployment_kernel (OstreeSysroot   *sysroot,
 
   const char *osname = ostree_deployment_get_osname (deployment);
   const char *bootcsum = ostree_deployment_get_bootcsum (deployment);
+  int bootsize = kernel_layout->bootsize;
+  int boot_space_free = 0;
+  struct statvfs stvfsbuf;
+  if (TEMP_FAILURE_RETRY (fstatvfs (boot_dfd, &stvfsbuf)) < 0)
+    return glnx_throw_errno_prefix (error, "fstatvfs");
+  boot_space_free = stvfsbuf.f_bsize * stvfsbuf.f_bfree;
+
   g_assert_cmpstr (kernel_layout->bootcsum, ==, bootcsum);
+
   g_autofree char *bootcsumdir = g_strdup_printf ("ostree/%s-%s", osname, bootcsum);
   g_autofree char *bootconfdir = g_strdup_printf ("loader.%d/entries", new_bootversion);
   g_autofree char *bootconf_name = g_strdup_printf ("ostree-%d-%s.conf",
@@ -1646,10 +1713,15 @@ install_deployment_kernel (OstreeSysroot   *sysroot,
    * it doesn't exist already.
    */
   struct stat stbuf;
+  struct stat stbuf_dest;
   if (!glnx_fstatat_allow_noent (bootcsum_dfd, kernel_layout->kernel_namever, &stbuf, 0, error))
     return FALSE;
   if (errno == ENOENT)
     {
+      if (!glnx_fstatat(kernel_layout->boot_dfd, kernel_layout->kernel_srcpath, &stbuf_dest, 0, error))
+        return FALSE;
+      if (!check_can_complete_copy_xdev (bootsize, boot_space_free, &stbuf, &stbuf_dest, error))
+        return FALSE;
       if (!install_into_boot (sepolicy, kernel_layout->boot_dfd, kernel_layout->kernel_srcpath,
                               bootcsum_dfd, kernel_layout->kernel_namever,
                               sysroot->debug_flags,
@@ -1667,6 +1739,10 @@ install_deployment_kernel (OstreeSysroot   *sysroot,
         return FALSE;
       if (errno == ENOENT)
         {
+          if (!glnx_fstatat(kernel_layout->boot_dfd, kernel_layout->initramfs_srcpath, &stbuf_dest, 0, error))
+            return FALSE;
+          if (!check_can_complete_copy_xdev (bootsize, boot_space_free, &stbuf, &stbuf_dest, error))
+            return FALSE;
           if (!install_into_boot (sepolicy, kernel_layout->boot_dfd, kernel_layout->initramfs_srcpath,
                                   bootcsum_dfd, kernel_layout->initramfs_namever,
                                   sysroot->debug_flags,
@@ -1682,6 +1758,10 @@ install_deployment_kernel (OstreeSysroot   *sysroot,
         return FALSE;
       if (errno == ENOENT)
         {
+          if (!glnx_fstatat(kernel_layout->boot_dfd, kernel_layout->devicetree_srcpath, &stbuf_dest, 0, error))
+            return FALSE;
+          if (!check_can_complete_copy_xdev (bootsize, boot_space_free, &stbuf, &stbuf_dest, error))
+            return FALSE;
           if (!install_into_boot (sepolicy, kernel_layout->boot_dfd, kernel_layout->devicetree_srcpath,
                                   bootcsum_dfd, kernel_layout->devicetree_namever,
                                   sysroot->debug_flags,
