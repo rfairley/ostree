@@ -2346,9 +2346,14 @@ ostree_sysroot_write_deployments_with_options (OstreeSysroot     *self,
         return FALSE;
       bootloader_is_atomic = bootloader != NULL && _ostree_bootloader_is_atomic (bootloader);
 
+      g_print ("before bootswap\n");
+
       /* Note equivalent of try/finally here */
       gboolean success = write_deployments_bootswap (self, new_deployments, opts, bootloader,
                                                      &syncstats, cancellable, error);
+
+      g_print ("after bootswap\n");
+
       /* Below here don't set GError until the if (!success) check */
       if (boot_was_ro_mount)
         {
