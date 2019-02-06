@@ -110,6 +110,7 @@ append_config_from_loader_entries (OstreeBootloaderSyslinux  *self,
 static gboolean
 _ostree_bootloader_syslinux_write_config (OstreeBootloader          *bootloader,
                                           int                    bootversion,
+                                          GPtrArray         *new_deployments,
                                           GCancellable          *cancellable,
                                           GError               **error)
 {

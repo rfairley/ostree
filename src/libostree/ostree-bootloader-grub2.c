@@ -20,6 +20,7 @@
 #include "config.h"
 
 #include "ostree-sysroot-private.h"
+#include "ostree-deployment-private.h"
 #include "ostree-bootloader-grub2.h"
 #include "otutil.h"
 #include <gio/gfiledescriptorbased.h>
@@ -52,16 +53,7 @@
 #define GRUB2_EFI_SUFFIX "efi"
 #endif
 
-struct _OstreeBootloaderGrub2
-{
-  GObject       parent_instance;
 
-  OstreeSysroot  *sysroot;
-  GFile          *config_path_bios_1;
-  GFile          *config_path_bios_2;
-  GFile          *config_path_efi;
-  gboolean        is_efi;
-};
 
 typedef GObjectClass OstreeBootloaderGrub2Class;
 
@@ -332,6 +324,7 @@ grub2_child_setup (gpointer user_data)
 static gboolean
 _ostree_bootloader_grub2_write_config (OstreeBootloader      *bootloader,
                                        int                    bootversion,
+                                       GPtrArray         *new_deployments,
                                        GCancellable          *cancellable,
                                        GError               **error)
 {
@@ -363,9 +356,20 @@ _ostree_bootloader_grub2_write_config (OstreeBootloader      *bootloader,
 
       deployments = ostree_sysroot_get_deployments (self->sysroot);
 
-      g_assert_cmpint (deployments->len, >, 0);
+      if (deployments->len > 0) g_print("tool_deployment osname: %s csum: %s\n", ((struct _OstreeDeployment*)deployments->pdata[0])->osname, ((struct _OstreeDeployment*)deployments->pdata[0])->csum);
+      if (self->sysroot->staged_deployment) g_print("staged_deployment osname: %s csum: %s\n", self->sysroot->staged_deployment->osname, self->sysroot->staged_deployment->csum);
 
-      tool_deployment = deployments->pdata[0];
+      //g_assert_cmpint (deployments->len, >, 0);
+
+      if (deployments->len == 0)
+        {
+          g_assert_cmpint (new_deployments->len, > , 0);
+          tool_deployment = new_deployments->pdata[0];
+        }
+      else
+        {
+          tool_deployment = deployments->pdata[0];
+        }
 
       /* Sadly we have to execute code to generate the bootloader configuration.
        * If we're in a booted deployment, we just don't chroot.
@@ -378,6 +382,7 @@ _ostree_bootloader_grub2_write_config (OstreeBootloader      *bootloader,
        */
       tool_deployment_root = ostree_sysroot_get_deployment_directory (self->sysroot, tool_deployment);
       grub2_mkconfig_chroot = g_file_get_path (tool_deployment_root);
+      g_print("grub2_mkconfig_chroot: %s\n", grub2_mkconfig_chroot);
     }
 
   g_autoptr(GFile) new_config_path = NULL;

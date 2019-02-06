@@ -44,6 +44,8 @@
 #include "ostree-sysroot-private.h"
 #include "ostree-sepolicy-private.h"
 #include "ostree-deployment-private.h"
+#include "ostree-bootloader.h"
+#include "ostree-bootloader-grub2.h"
 #include "ostree-core-private.h"
 #include "ostree-linuxfsutil.h"
 #include "libglnx.h"
@@ -2119,9 +2121,15 @@ write_deployments_bootswap (OstreeSysroot     *self,
   g_debug ("Using bootloader: %s", bootloader ?
            g_type_name (G_TYPE_FROM_INSTANCE (bootloader)) : "(none)");
 
-  if (bootloader)
+  if (TRUE || bootloader)
     {
-      if (!_ostree_bootloader_write_config (bootloader, new_bootversion,
+      g_print("before _ostree_bootloader_write_config\n");
+      if (!bootloader) g_print("normally doesn't do this\n");
+
+      g_print("bootloader->sysroot->deployments length: %d\n", OSTREE_BOOTLOADER_GRUB2 (bootloader)->sysroot->deployments->len);
+      g_print("new_deployments->len: %d\n", new_deployments->len);
+
+      if (!_ostree_bootloader_write_config (bootloader, new_bootversion, new_deployments,
                                             cancellable, error))
         return glnx_prefix_error (error, "Bootloader write config");
     }
@@ -2202,6 +2210,8 @@ ostree_sysroot_write_deployments_with_options (OstreeSysroot     *self,
         {
           g_assert (ostree_deployment_is_staged (first));
 
+          g_print("retaining first deployment\n");
+
           /* In this case note staged was retained */
           removed_staged = FALSE;
         }
@@ -2210,15 +2220,48 @@ ostree_sysroot_write_deployments_with_options (OstreeSysroot     *self,
       for (guint i = 0; i < new_deployments->len; i++)
         {
           OstreeDeployment *deployment = new_deployments->pdata[i];
-          if (!ostree_deployment_is_staged (deployment))
+          g_print ("new_deployments: %d\n  %s\n  %s\n  %d\n"  /*"%s\n"*/  "%d\n"  /*"%ls\n"*/  "%d\n",
+            ostree_deployment_get_index (deployment),
+            ostree_deployment_get_osname (deployment) ?: "no osname",
+            ostree_deployment_get_csum (deployment) ?: "no csum",
+            ostree_deployment_get_deployserial (deployment),
+            //ostree_deployment_get_bootcsum (deployment) ?: "no bootcsum",
+            ostree_deployment_get_bootserial (deployment),
+            //(int*)ostree_deployment_get_bootconfig (deployment),
+            ostree_deployment_is_staged (deployment));
+          if (!ostree_deployment_is_staged (deployment)) {
             g_ptr_array_add (new_deployments_copy, deployment);
+            g_print ("new_deployments (copy): %d\n  %s\n  %s\n  %d\n"  /*"%s\n"*/  "%d\n"  /*"%ls\n"*/  "%d\n",
+              ostree_deployment_get_index (deployment),
+              ostree_deployment_get_osname (deployment) ?: "no osname",
+              ostree_deployment_get_csum (deployment) ?: "no csum",
+              ostree_deployment_get_deployserial (deployment),
+              //ostree_deployment_get_bootcsum (deployment) ?: "no bootcsum",
+              ostree_deployment_get_bootserial (deployment),
+              //(int*)ostree_deployment_get_bootconfig (deployment),
+              ostree_deployment_is_staged (deployment));
+          }
         }
       new_deployments = new_deployments_copy;
     }
 
+  g_assert_cmpint(new_deployments_copy->len, >, 0);
+  if (self->staged_deployment)
+    g_print ("staged_deployment: %d\n  %s\n  %s\n  %d\n"  /*"%s\n"*/  "%d\n"  /*"%ls\n"*/  "%d\n",
+      ostree_deployment_get_index (self->staged_deployment),
+      ostree_deployment_get_osname (self->staged_deployment) ?: "no osname",
+      ostree_deployment_get_csum (self->staged_deployment) ?: "no csum",
+      ostree_deployment_get_deployserial (self->staged_deployment),
+      //ostree_deployment_get_bootcsum (deployment) ?: "no bootcsum",
+      ostree_deployment_get_bootserial (self->staged_deployment),
+      //(int*)ostree_deployment_get_bootconfig (deployment),
+      ostree_deployment_is_staged (self->staged_deployment));
+
   /* Take care of removing the staged deployment's on-disk state if we should */
   if (removed_staged)
     {
+      g_print("removing staged deployment\n");
+
       g_assert (self->staged_deployment);
       g_assert (self->staged_deployment == self->deployments->pdata[0]);
 
@@ -2232,6 +2275,8 @@ ostree_sysroot_write_deployments_with_options (OstreeSysroot     *self,
       self->staged_deployment = NULL;
       g_ptr_array_remove_index (self->deployments, 0);
     }
+
+  g_print("self->deployments->len: %d\n", self->deployments->len);
   const guint nonstaged_current_len = self->deployments->len - (self->staged_deployment ? 1 : 0);
 
   /* Assign a bootserial to each new deployment.
@@ -2244,6 +2289,8 @@ ostree_sysroot_write_deployments_with_options (OstreeSysroot     *self,
    * subbootversion bootlinks.
    */
   gboolean requires_new_bootversion = FALSE;
+
+  g_print("new_deployments->len: %d, nonstaged_current_len: %d\n", new_deployments->len, nonstaged_current_len);
 
   if (new_deployments->len != nonstaged_current_len)
     requires_new_bootversion = TRUE;
@@ -2310,7 +2357,7 @@ ostree_sysroot_write_deployments_with_options (OstreeSysroot     *self,
   gboolean bootloader_is_atomic = FALSE;
   SyncStats syncstats = { 0, };
   g_autoptr(OstreeBootloader) bootloader = NULL;
-  if (!requires_new_bootversion)
+  if (FALSE && !requires_new_bootversion)
     {
       if (!create_new_bootlinks (self, self->bootversion,
                                  new_deployments,
@@ -2329,6 +2376,10 @@ ostree_sysroot_write_deployments_with_options (OstreeSysroot     *self,
     }
   else
     {
+      g_print("in requires_new_bootversion\n");
+      if (!requires_new_bootversion) {
+        g_print ("normally doesn't happen\n");
+      }
       gboolean boot_was_ro_mount = FALSE;
       if (self->booted_deployment)
         boot_was_ro_mount = is_ro_mount ("/boot");
@@ -2346,9 +2397,14 @@ ostree_sysroot_write_deployments_with_options (OstreeSysroot     *self,
         return FALSE;
       bootloader_is_atomic = bootloader != NULL && _ostree_bootloader_is_atomic (bootloader);
 
+      g_print ("before bootswap\n");
+
       /* Note equivalent of try/finally here */
       gboolean success = write_deployments_bootswap (self, new_deployments, opts, bootloader,
                                                      &syncstats, cancellable, error);
+
+      g_print ("after bootswap\n");
+
       /* Below here don't set GError until the if (!success) check */
       if (boot_was_ro_mount)
         {
