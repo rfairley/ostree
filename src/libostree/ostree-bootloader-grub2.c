@@ -20,6 +20,7 @@
 #include "config.h"
 
 #include "ostree-sysroot-private.h"
+#include "ostree-deployment-private.h"
 #include "ostree-bootloader-grub2.h"
 #include "otutil.h"
 #include <gio/gfiledescriptorbased.h>
@@ -362,6 +363,9 @@ _ostree_bootloader_grub2_write_config (OstreeBootloader      *bootloader,
       g_autoptr(GFile) tool_deployment_root = NULL;
 
       deployments = ostree_sysroot_get_deployments (self->sysroot);
+
+      if (deployments->len > 0) g_print("tool_deployment osname: %s csum: %s\n", ((struct _OstreeDeployment*)deployments->pdata[0])->osname, ((struct _OstreeDeployment*)deployments->pdata[0])->csum);
+      if (self->sysroot->staged_deployment) g_print("staged_deployment osname: %s csum: %s\n", self->sysroot->staged_deployment->osname, self->sysroot->staged_deployment->csum);
 
       g_assert_cmpint (deployments->len, >, 0);
 
