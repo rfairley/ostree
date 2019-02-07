@@ -215,5 +215,7 @@ ot_admin_builtin_status (int argc, char **argv, OstreeCommandInvocation *invocat
         }
     }
 
+  g_print ("hello2\n");
+
   return TRUE;
 }

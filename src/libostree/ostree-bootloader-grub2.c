@@ -382,6 +382,7 @@ _ostree_bootloader_grub2_write_config (OstreeBootloader      *bootloader,
        */
       tool_deployment_root = ostree_sysroot_get_deployment_directory (self->sysroot, tool_deployment);
       grub2_mkconfig_chroot = g_file_get_path (tool_deployment_root);
+      g_print("grub2_mkconfig_chroot: %s\n", grub2_mkconfig_chroot);
     }
 
   g_autoptr(GFile) new_config_path = NULL;

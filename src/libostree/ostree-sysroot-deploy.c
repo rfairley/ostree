@@ -2119,8 +2119,10 @@ write_deployments_bootswap (OstreeSysroot     *self,
   g_debug ("Using bootloader: %s", bootloader ?
            g_type_name (G_TYPE_FROM_INSTANCE (bootloader)) : "(none)");
 
-  if (bootloader)
+  if (TRUE || bootloader)
     {
+      g_print("before _ostree_bootloader_write_config\n");
+      if (!bootloader) g_print("normally doesn't do this\n");
       if (!_ostree_bootloader_write_config (bootloader, new_bootversion,
                                             cancellable, error))
         return glnx_prefix_error (error, "Bootloader write config");
@@ -2210,11 +2212,32 @@ ostree_sysroot_write_deployments_with_options (OstreeSysroot     *self,
       for (guint i = 0; i < new_deployments->len; i++)
         {
           OstreeDeployment *deployment = new_deployments->pdata[i];
-          if (!ostree_deployment_is_staged (deployment))
+          g_print ("new_deployments: %d\n  %s\n  %s\n  %d\n"  /*"%s\n"*/  "%d\n"  /*"%ls\n"*/  "%d\n",
+            ostree_deployment_get_index (deployment),
+            ostree_deployment_get_osname (deployment) ?: "no osname",
+            ostree_deployment_get_csum (deployment) ?: "no csum",
+            ostree_deployment_get_deployserial (deployment),
+            //ostree_deployment_get_bootcsum (deployment) ?: "no bootcsum",
+            ostree_deployment_get_bootserial (deployment),
+            //(int*)ostree_deployment_get_bootconfig (deployment),
+            ostree_deployment_is_staged (deployment));
+          if (!ostree_deployment_is_staged (deployment)) {
             g_ptr_array_add (new_deployments_copy, deployment);
+            g_print ("new_deployments (copy): %d\n  %s\n  %s\n  %d\n"  /*"%s\n"*/  "%d\n"  /*"%ls\n"*/  "%d\n",
+              ostree_deployment_get_index (deployment),
+              ostree_deployment_get_osname (deployment) ?: "no osname",
+              ostree_deployment_get_csum (deployment) ?: "no csum",
+              ostree_deployment_get_deployserial (deployment),
+              //ostree_deployment_get_bootcsum (deployment) ?: "no bootcsum",
+              ostree_deployment_get_bootserial (deployment),
+              //(int*)ostree_deployment_get_bootconfig (deployment),
+              ostree_deployment_is_staged (deployment));
+          }
         }
       new_deployments = new_deployments_copy;
     }
+
+  
 
   /* Take care of removing the staged deployment's on-disk state if we should */
   if (removed_staged)
@@ -2310,7 +2333,7 @@ ostree_sysroot_write_deployments_with_options (OstreeSysroot     *self,
   gboolean bootloader_is_atomic = FALSE;
   SyncStats syncstats = { 0, };
   g_autoptr(OstreeBootloader) bootloader = NULL;
-  if (!requires_new_bootversion)
+  if (FALSE && !requires_new_bootversion)
     {
       if (!create_new_bootlinks (self, self->bootversion,
                                  new_deployments,
@@ -2329,6 +2352,10 @@ ostree_sysroot_write_deployments_with_options (OstreeSysroot     *self,
     }
   else
     {
+      g_print("in requires_new_bootversion\n");
+      if (!requires_new_bootversion) {
+        g_print ("normally doesn't happen\n");
+      }
       gboolean boot_was_ro_mount = FALSE;
       if (self->booted_deployment)
         boot_was_ro_mount = is_ro_mount ("/boot");
