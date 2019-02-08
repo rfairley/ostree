@@ -27,6 +27,17 @@ G_BEGIN_DECLS
 #define OSTREE_BOOTLOADER_GRUB2(inst) (G_TYPE_CHECK_INSTANCE_CAST ((inst), OSTREE_TYPE_BOOTLOADER_GRUB2, OstreeBootloaderGrub2))
 #define OSTREE_IS_BOOTLOADER_GRUB2(inst) (G_TYPE_CHECK_INSTANCE_TYPE ((inst), OSTREE_TYPE_BOOTLOADER_GRUB2))
 
+struct _OstreeBootloaderGrub2
+{
+  GObject       parent_instance;
+
+  OstreeSysroot  *sysroot;
+  GFile          *config_path_bios_1;
+  GFile          *config_path_bios_2;
+  GFile          *config_path_efi;
+  gboolean        is_efi;
+};
+
 typedef struct _OstreeBootloaderGrub2 OstreeBootloaderGrub2;
 
 GType _ostree_bootloader_grub2_get_type (void) G_GNUC_CONST;

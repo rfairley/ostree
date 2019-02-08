@@ -44,6 +44,8 @@
 #include "ostree-sysroot-private.h"
 #include "ostree-sepolicy-private.h"
 #include "ostree-deployment-private.h"
+#include "ostree-bootloader.h"
+#include "ostree-bootloader-grub2.h"
 #include "ostree-core-private.h"
 #include "ostree-linuxfsutil.h"
 #include "libglnx.h"
@@ -2123,7 +2125,11 @@ write_deployments_bootswap (OstreeSysroot     *self,
     {
       g_print("before _ostree_bootloader_write_config\n");
       if (!bootloader) g_print("normally doesn't do this\n");
-      if (!_ostree_bootloader_write_config (bootloader, new_bootversion,
+
+      g_print("bootloader->sysroot->deployments length: %d\n", OSTREE_BOOTLOADER_GRUB2 (bootloader)->sysroot->deployments->len);
+      g_print("new_deployments->len: %d\n", new_deployments->len);
+
+      if (!_ostree_bootloader_write_config (bootloader, new_bootversion, new_deployments,
                                             cancellable, error))
         return glnx_prefix_error (error, "Bootloader write config");
     }
@@ -2204,6 +2210,8 @@ ostree_sysroot_write_deployments_with_options (OstreeSysroot     *self,
         {
           g_assert (ostree_deployment_is_staged (first));
 
+          g_print("retaining first deployment\n");
+
           /* In this case note staged was retained */
           removed_staged = FALSE;
         }
@@ -2237,11 +2245,23 @@ ostree_sysroot_write_deployments_with_options (OstreeSysroot     *self,
       new_deployments = new_deployments_copy;
     }
 
-  
+  g_assert_cmpint(new_deployments_copy->len, >, 0);
+  if (self->staged_deployment)
+    g_print ("staged_deployment: %d\n  %s\n  %s\n  %d\n"  /*"%s\n"*/  "%d\n"  /*"%ls\n"*/  "%d\n",
+      ostree_deployment_get_index (self->staged_deployment),
+      ostree_deployment_get_osname (self->staged_deployment) ?: "no osname",
+      ostree_deployment_get_csum (self->staged_deployment) ?: "no csum",
+      ostree_deployment_get_deployserial (self->staged_deployment),
+      //ostree_deployment_get_bootcsum (deployment) ?: "no bootcsum",
+      ostree_deployment_get_bootserial (self->staged_deployment),
+      //(int*)ostree_deployment_get_bootconfig (deployment),
+      ostree_deployment_is_staged (self->staged_deployment));
 
   /* Take care of removing the staged deployment's on-disk state if we should */
   if (removed_staged)
     {
+      g_print("removing staged deployment\n");
+
       g_assert (self->staged_deployment);
       g_assert (self->staged_deployment == self->deployments->pdata[0]);
 
@@ -2255,6 +2275,8 @@ ostree_sysroot_write_deployments_with_options (OstreeSysroot     *self,
       self->staged_deployment = NULL;
       g_ptr_array_remove_index (self->deployments, 0);
     }
+
+  g_print("self->deployments->len: %d\n", self->deployments->len);
   const guint nonstaged_current_len = self->deployments->len - (self->staged_deployment ? 1 : 0);
 
   /* Assign a bootserial to each new deployment.
@@ -2267,6 +2289,8 @@ ostree_sysroot_write_deployments_with_options (OstreeSysroot     *self,
    * subbootversion bootlinks.
    */
   gboolean requires_new_bootversion = FALSE;
+
+  g_print("new_deployments->len: %d, nonstaged_current_len: %d\n", new_deployments->len, nonstaged_current_len);
 
   if (new_deployments->len != nonstaged_current_len)
     requires_new_bootversion = TRUE;
