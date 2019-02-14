@@ -2310,6 +2310,7 @@ ostree_sysroot_write_deployments_with_options (OstreeSysroot     *self,
   gboolean bootloader_is_atomic = FALSE;
   SyncStats syncstats = { 0, };
   g_autoptr(OstreeBootloader) bootloader = NULL;
+  const char *bootloader_config = NULL;
   if (!requires_new_bootversion)
     {
       if (!create_new_bootlinks (self, self->bootversion,
@@ -2342,8 +2343,36 @@ ostree_sysroot_write_deployments_with_options (OstreeSysroot     *self,
             return glnx_throw_errno_prefix (error, "Remounting /boot read-write");
         }
 
-      if (!_ostree_sysroot_query_bootloader (self, &bootloader, cancellable, error))
-        return FALSE;
+      g_autoptr(OstreeRepo) repo = NULL;
+      if (!ostree_sysroot_get_repo (self, &repo, cancellable, error))
+        return glnx_throw (error, "Loading repo config");
+
+      bootloader_config = ostree_repo_get_bootloader (repo);
+
+      g_debug ("Using bootloader configuration: %s", bootloader_config);
+
+      if (g_str_equal (bootloader_config, "auto") == 0)
+        {
+          if (!_ostree_sysroot_query_bootloader (self, &bootloader, cancellable, error))
+            return FALSE;
+        }
+      else if (g_str_equal (bootloader_config, "none") == 0)
+        {
+          /* No bootloader specified; do not query bootloaders to run. */
+        }
+      else
+        {
+          /* TODO: later add support for specifying a generic
+           * bootloader binary here (e.g. bootloader=x means
+           * run /usr/lib/ostree/bootloaders/x). Override
+           * with /etc/ostree/bootloaders/x possibly.
+           * See:
+           * https://github.com/ostreedev/ostree/issues/1719
+           * https://github.com/ostreedev/ostree/issues/1801
+           */
+          return glnx_throw (error, "Unsupported bootloader option '%s'", bootloader_config);
+        }
+
       bootloader_is_atomic = bootloader != NULL && _ostree_bootloader_is_atomic (bootloader);
 
       /* Note equivalent of try/finally here */
@@ -2375,6 +2404,7 @@ ostree_sysroot_write_deployments_with_options (OstreeSysroot     *self,
     sd_journal_send ("MESSAGE_ID=" SD_ID128_FORMAT_STR, SD_ID128_FORMAT_VAL(OSTREE_DEPLOYMENT_COMPLETE_ID),
                      "MESSAGE=%s", msg,
                      "OSTREE_BOOTLOADER=%s", bootloader ? _ostree_bootloader_get_name (bootloader) : "none",
+                     "OSTREE_BOOTLOADER_CONFIG=%s", bootloader_config,
                      "OSTREE_BOOTLOADER_ATOMIC=%s", bootloader_is_atomic ? "yes" : "no",
                      "OSTREE_DID_BOOTSWAP=%s", requires_new_bootversion ? "yes" : "no",
                      "OSTREE_N_DEPLOYMENTS=%u", new_deployments->len,

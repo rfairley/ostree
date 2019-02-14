@@ -3113,6 +3113,27 @@ reload_remote_config (OstreeRepo          *self,
   return TRUE;
 }
 
+static gboolean
+reload_sysroot_config (OstreeRepo          *self,
+                       GCancellable        *cancellable,
+                       GError             **error)
+{
+  { g_autofree char *bootloader = NULL;
+
+    if (!ot_keyfile_get_value_with_default_group_optional (self->config, "sysroot",
+                                                           "bootloader", "auto",
+                                                           &bootloader, error))
+      return FALSE;
+
+    if (bootloader == NULL)
+      return glnx_throw (error, "Invalid empty bootloader configuration");
+
+    self->bootloader = g_steal_pointer (&bootloader);
+  }
+
+  return TRUE;
+}
+
 /**
  * ostree_repo_reload_config:
  * @self: repo
@@ -3130,6 +3151,8 @@ ostree_repo_reload_config (OstreeRepo          *self,
   if (!reload_core_config (self, cancellable, error))
     return FALSE;
   if (!reload_remote_config (self, cancellable, error))
+    return FALSE;
+  if (!reload_sysroot_config (self, cancellable, error))
     return FALSE;
   return TRUE;
 }
@@ -6063,4 +6086,22 @@ ostree_repo_get_default_repo_finders (OstreeRepo *self)
   g_return_val_if_fail (OSTREE_IS_REPO (self), NULL);
 
   return (const gchar * const *)self->repo_finders;
+}
+
+/**
+ * ostree_repo_get_bootloader:
+ * @self: an #OstreeRepo
+ * 
+ * Get the bootloader configured. See the documentation for the
+ * "sysroot.bootloader" config key.
+ * 
+ * Returns: bootloader configuration for the sysroot
+ * Since: 2019.2
+ */
+const gchar *
+ostree_repo_get_bootloader (OstreeRepo   *self)
+{
+  g_return_val_if_fail (OSTREE_IS_REPO (self), NULL);
+
+  return self->bootloader;
 }
