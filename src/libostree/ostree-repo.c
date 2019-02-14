@@ -3113,6 +3113,55 @@ reload_remote_config (OstreeRepo          *self,
   return TRUE;
 }
 
+static gboolean
+reload_sysroot_config (OstreeRepo          *self,
+                       GCancellable        *cancellable,
+                       GError             **error)
+{
+  { g_autofree char *bootloader = NULL;
+    GError *local_error = NULL;
+
+    if (!ot_keyfile_get_value_with_default (self->config, "sysroot",
+                                            "bootloader", "auto",
+                                            &bootloader, &local_error))
+      {
+        /* XXX: quick hack to make existing config files not fail
+         * on not having the [sysroot] group present. */
+        if (local_error)
+          {
+            if (g_error_matches (local_error, G_KEY_FILE_ERROR,
+                                 G_KEY_FILE_ERROR_GROUP_NOT_FOUND))
+              {
+                g_clear_error (&local_error);
+                g_assert_cmpstr (bootloader, ==, NULL);
+                bootloader = g_strdup_printf("auto");
+              }
+            else
+              {
+                g_propagate_error (error, local_error);
+                return FALSE;
+              }
+          }
+      }
+
+    if (bootloader == NULL)
+      return glnx_throw (error, "Invalid empty bootloader configuration");
+
+    /* Can later add support for specifying a single bootloader e.g.
+     * "grub", "sd-boot", "rpi" here too. See:
+     * https://github.com/ostreedev/ostree/issues/1719
+     * https://github.com/ostreedev/ostree/issues/1801
+     */
+    if (!g_str_equal (bootloader, "auto")
+        && !g_str_equal (bootloader, "none"))
+      return glnx_throw (error, "Invalid configured bootloader '%s'", bootloader);
+
+    self->bootloader = g_steal_pointer (&bootloader);
+  }
+
+  return TRUE;
+}
+
 /**
  * ostree_repo_reload_config:
  * @self: repo
@@ -3130,6 +3179,8 @@ ostree_repo_reload_config (OstreeRepo          *self,
   if (!reload_core_config (self, cancellable, error))
     return FALSE;
   if (!reload_remote_config (self, cancellable, error))
+    return FALSE;
+  if (!reload_sysroot_config (self, cancellable, error))
     return FALSE;
   return TRUE;
 }
@@ -6059,4 +6110,22 @@ ostree_repo_get_default_repo_finders (OstreeRepo *self)
   g_return_val_if_fail (OSTREE_IS_REPO (self), NULL);
 
   return (const gchar * const *)self->repo_finders;
+}
+
+/**
+ * ostree_repo_get_bootloader:
+ * @self: an #OstreeRepo
+ * 
+ * Get the bootloader configured. See the documentation for the
+ * "sysroot.bootloader" config key.
+ * 
+ * Returns: bootloader configuration for the sysroot
+ * Since: 2019.2
+ */
+const gchar *
+ostree_repo_get_bootloader (OstreeRepo   *self)
+{
+  g_return_val_if_fail (OSTREE_IS_REPO (self), NULL);
+
+  return self->bootloader;
 }
