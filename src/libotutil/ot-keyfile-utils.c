@@ -107,6 +107,13 @@ ot_keyfile_get_value_with_default (GKeyFile      *keyfile,
  * none of the separators, read the string as a single entry into a
  * NULL-terminated array out_value. If the value string contains multiple of
  * the separators, an error is given.
+ * 
+ * Note: ot_keyfile_get_string_as_list() exists to implement the higher-level
+ * logic of checking for duplicates of separators present in the string, for
+ * strings where only one of a set of possible separators is accepted. To
+ * simply read a string from the keyfile with one accepted separator, use
+ * ot_keyfile_get_string_list_with_default().
+ * 
  * Returns TRUE on success, FALSE on error. */
 gboolean
 ot_keyfile_get_string_as_list (GKeyFile      *keyfile,
