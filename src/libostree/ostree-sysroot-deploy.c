@@ -1634,8 +1634,13 @@ check_can_complete_copy_xdev (int             space_needed,
                               struct stat    *dest_stbuf,
                               GError        **error)
 {
+  g_print ("In check_can_complete_copy_xdev()\n");
   if (!src_stbuf || !dest_stbuf)
     return glnx_throw(error, "unallocated stbuf(s) given");
+
+  g_print ("/boot has %d bytes free, install requires %d bytes\n",
+           dest_space_free, space_needed);
+
   /* If size to copy exceeds space free, and a cross-device
   copy is needed (src and dest are on different devices),
   then we cannot proceed. */
@@ -1709,6 +1714,8 @@ install_deployment_kernel (OstreeSysroot   *sysroot,
   if (!glnx_shutil_mkdir_p_at (boot_dfd, bootconfdir, 0775, cancellable, error))
     return FALSE;
 
+  g_print ("install_deployment_kernel(): before install kernel\n");
+
   /* Install (hardlink/copy) the kernel into /boot/ostree/osname-${bootcsum} if
    * it doesn't exist already.
    */
@@ -1728,6 +1735,8 @@ install_deployment_kernel (OstreeSysroot   *sysroot,
                               cancellable, error))
         return FALSE;
     }
+
+  g_print ("install_deployment_kernel(): before install initramfs\n");
 
   /* If we have an initramfs, then install it into
    * /boot/ostree/osname-${bootcsum} if it doesn't exist already.
@@ -1750,6 +1759,8 @@ install_deployment_kernel (OstreeSysroot   *sysroot,
             return FALSE;
         }
     }
+
+  g_print ("install_deployment_kernel(): before install devicetree\n");
 
   if (kernel_layout->devicetree_srcpath)
     {
@@ -2390,7 +2401,7 @@ ostree_sysroot_write_deployments_with_options (OstreeSysroot     *self,
   gboolean bootloader_is_atomic = FALSE;
   SyncStats syncstats = { 0, };
   g_autoptr(OstreeBootloader) bootloader = NULL;
-  if (!requires_new_bootversion)
+  if (FALSE && !requires_new_bootversion)
     {
       if (!create_new_bootlinks (self, self->bootversion,
                                  new_deployments,
@@ -2409,6 +2420,10 @@ ostree_sysroot_write_deployments_with_options (OstreeSysroot     *self,
     }
   else
     {
+      g_print ("About to write_deployments_bootswap()\n");
+      if (!requires_new_bootversion)
+        g_print ("Normally doesn't do this\n.");
+
       gboolean boot_was_ro_mount = FALSE;
       if (self->booted_deployment)
         boot_was_ro_mount = is_ro_mount ("/boot");
