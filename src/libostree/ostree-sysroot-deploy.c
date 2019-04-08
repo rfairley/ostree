@@ -2686,9 +2686,12 @@ sysroot_finalize_deployment (OstreeSysroot     *self,
           g_print ("in !kargs_overridden\n");
           /* Regenerate kargs from merge deployment config. */
           g_autofree char *opts = NULL;
-          if (!deployment_merge_opts (self, merge_deployment, &opts, cancellable, error))
-            return FALSE;
-          ostree_bootconfig_parser_set (ostree_deployment_get_bootconfig (deployment), "options", opts);
+          if (merge_deployment)
+            {
+              if (!deployment_merge_opts (self, merge_deployment, &opts, cancellable, error))
+                return FALSE;
+              ostree_bootconfig_parser_set (ostree_deployment_get_bootconfig (deployment), "options", opts);
+            }
         }
     }
 

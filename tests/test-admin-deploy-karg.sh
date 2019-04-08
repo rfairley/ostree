@@ -26,7 +26,7 @@ set -euo pipefail
 # Exports OSTREE_SYSROOT so --sysroot not needed.
 setup_os_repository "archive" "syslinux"
 
-echo "1..3"
+echo "1..5"
 
 ${CMD_PREFIX} ostree --repo=sysroot/ostree/repo pull-local --remote=testos testos-repo testos/buildmaster/x86_64-runtime
 rev=$(${CMD_PREFIX} ostree --repo=sysroot/ostree/repo rev-parse testos/buildmaster/x86_64-runtime)
@@ -67,3 +67,19 @@ assert_file_has_content sysroot/boot/loader/entries/ostree-2-testos.conf 'option
 assert_file_has_content sysroot/boot/loader/entries/ostree-2-testos.conf 'options.*APPENDARG=VALAPPEND .*APPENDARG=2NDAPPEND'
 
 echo "ok deploy --karg-append"
+
+${CMD_PREFIX} ostree admin status
+${CMD_PREFIX} ostree admin undeploy 0
+
+${CMD_PREFIX} ostree admin deploy  --os=testos --karg-append=APPENDARG=VALAPPEND --karg-append=APPENDARG=2NDAPPEND testos:testos/buildmaster/x86_64-runtime
+assert_file_has_content sysroot/boot/loader/entries/ostree-2-testos.conf 'ostree-kargs-override.*true'
+
+echo "ok kargs override flag"
+
+${CMD_PREFIX} ostree admin status
+${CMD_PREFIX} ostree admin undeploy 0
+
+${CMD_PREFIX} ostree admin deploy --os=testos testos:testos/buildmaster/x86_64-runtime
+assert_not_file_has_content sysroot/boot/loader/entries/ostree-2-testos.conf 'ostree-kargs-override'
+
+echo "ok no kargs override flag"
