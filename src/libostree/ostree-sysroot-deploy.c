@@ -2569,69 +2569,73 @@ get_var_dfd (OstreeSysroot      *self,
 }
 
 static gboolean
+deployment_get_kargs_config_contents (OstreeSysroot     *self,
+                                      OstreeDeployment  *deployment,
+                                      char              *path,
+                                      char             **contents_out,
+                                      GCancellable      *cancellable,
+                                      GError           **error)
+{
+  glnx_autofd int deployment_dfd = -1;
+  g_autofree char *deployment_path = ostree_sysroot_get_deployment_dirpath (self, deployment);
+  if (!glnx_opendirat (self->sysroot_fd, deployment_path, TRUE,
+                       &deployment_dfd, error))
+    return FALSE;
+
+  struct stat stbuf;
+  if (!glnx_fstatat_allow_noent (deployment_dfd, path, &stbuf, 0, error))
+    return FALSE;
+  const gboolean config_exists = (errno == 0);
+
+  g_autofree char *ret_contents = NULL;
+  if (config_exists)
+    {
+      ret_contents = glnx_file_get_contents_utf8_at (deployment_dfd,
+                                                     path,
+                                                     NULL,
+                                                     cancellable,
+                                                     error);
+      if (!ret_contents)
+        return FALSE;
+    }
+  else
+    {
+      ret_contents = g_strdup ("");
+    }
+  ret_contents = g_strstrip (ret_contents);
+
+  *contents_out = g_steal_pointer (&ret_contents);
+
+  return TRUE;
+}
+
+static gboolean
 deployment_merge_opts (OstreeSysroot     *self,
                        OstreeDeployment  *deployment,
                        char             **opts_out,
                        GCancellable      *cancellable,
                        GError           **error)
 {
-  g_print ("in deployment_merge_kargs_configs\n");
-  glnx_autofd int deployment_dfd = -1;
-  g_autofree char *deployment_path = ostree_sysroot_get_deployment_dirpath (self, deployment);
-  g_print ("deployment_path: %s\n", deployment_path);
-  if (!glnx_opendirat (self->sysroot_fd, deployment_path, TRUE,
-                        &deployment_dfd, error))
+  g_autoptr(GPtrArray) kargs_configs = g_ptr_array_new_with_free_func (g_free);
+  g_autofree char *kargs_config_contents = NULL;
+  if (!deployment_get_kargs_config_contents (self, deployment,
+                                             _OSTREE_SYSROOT_DEPLOYMENT_KARGS_HOST,
+                                             &kargs_config_contents,
+                                             cancellable, error))
     return FALSE;
-
-  struct stat stbuf;
-  if (!glnx_fstatat_allow_noent (deployment_dfd, _OSTREE_SYSROOT_DEPLOYMENT_KARGS_BASE, &stbuf, 0, error))
+  g_ptr_array_add (kargs_configs, g_steal_pointer (&kargs_config_contents));
+  if (!deployment_get_kargs_config_contents (self, deployment,
+                                             _OSTREE_SYSROOT_DEPLOYMENT_KARGS_BASE,
+                                             &kargs_config_contents,
+                                             cancellable, error))
     return FALSE;
-  const gboolean base_config_exists = (errno == 0);
-  g_autofree char *base_config_contents = NULL;
-  if (base_config_exists)
-    {
-      base_config_contents = glnx_file_get_contents_utf8_at (deployment_dfd,
-                                                             _OSTREE_SYSROOT_DEPLOYMENT_KARGS_BASE,
-                                                             NULL,
-                                                             cancellable,
-                                                             error);
-      if (!base_config_contents)
-        return FALSE;
-      base_config_contents = g_strstrip (base_config_contents);
-    }
-  else
-    {
-      base_config_contents = g_strdup ("");
-    }
+  g_ptr_array_add (kargs_configs, g_steal_pointer (&kargs_config_contents));
 
-  if (!glnx_fstatat_allow_noent (deployment_dfd, _OSTREE_SYSROOT_DEPLOYMENT_KARGS_HOST, &stbuf, 0, error))
-    return FALSE;
-  const gboolean host_config_exists = (errno == 0);
-  g_autofree char *host_config_contents = NULL;
-  if (host_config_exists)
-    {
-      host_config_contents = glnx_file_get_contents_utf8_at (deployment_dfd,
-                                                             _OSTREE_SYSROOT_DEPLOYMENT_KARGS_HOST,
-                                                             NULL,
-                                                             cancellable,
-                                                             error);
-      if (!host_config_contents)
-        return FALSE;
-      host_config_contents = g_strstrip (host_config_contents);
-    }
-  else
-    {
-      host_config_contents = g_strdup ("");
-    }
-
-  g_print ("base_config_contents: %s\n", base_config_contents);
-  g_print ("host_config_contents: %s\n", host_config_contents);
-
-  g_autoptr(OstreeKernelArgs) kargs = _ostree_kernel_args_from_string (host_config_contents);
-  _ostree_kernel_args_parse_append (kargs, base_config_contents);
+  g_autoptr(OstreeKernelArgs) kargs = _ostree_kernel_args_new ();
+  for (guint i = 0; i < kargs_configs->len; i++)
+    _ostree_kernel_args_parse_append (kargs, kargs_configs->pdata[i]);
+  
   g_autofree char *kargs_contents = _ostree_kernel_args_to_string (kargs);
-
-  g_print ("kargs_contents: %s\n", kargs_contents);
   
   *opts_out = g_steal_pointer (&kargs_contents);
 
@@ -2646,7 +2650,6 @@ sysroot_finalize_deployment (OstreeSysroot     *self,
                              GCancellable      *cancellable,
                              GError           **error)
 {
-  g_print ("in sysroot_finalize_deployment\n");
   g_autofree char *deployment_path = ostree_sysroot_get_deployment_dirpath (self, deployment);
   glnx_autofd int deployment_dfd = -1;
   if (!glnx_opendirat (self->sysroot_fd, deployment_path, TRUE, &deployment_dfd, error))
