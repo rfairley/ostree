@@ -40,13 +40,10 @@ assert_has_dir sysroot/boot/ostree/testos-${bootcsum}
 mkdir -p osdata/usr/lib/ostree-boot
 os_tree_write_file "usr/lib/ostree-boot/kargs" "FOO=USR_1 MOO=USR_2 WOO=USR_3"
 os_repository_commit "testos-repo" "1"
-${CMD_PREFIX} ostree --repo=testos-repo ls ${commithash} usr/lib/ostree-boot
-${CMD_PREFIX} ostree --repo=sysroot/ostree/repo remote add --set=gpg-verify=false testos file://$(pwd)/testos-repo testos/buildmaster/x86_64-runtime
 
+${CMD_PREFIX} ostree --repo=sysroot/ostree/repo remote add --set=gpg-verify=false testos file://$(pwd)/testos-repo testos/buildmaster/x86_64-runtime
 ${CMD_PREFIX} ostree admin upgrade --os=testos
 assert_has_dir sysroot/boot/ostree/testos-${bootcsum}
-
-${CMD_PREFIX} ostree admin deploy --os=testos testos:testos/buildmaster/x86_64-runtime
 
 assert_file_has_content sysroot/boot/loader/entries/ostree-2-testos.conf 'FOO=USR_1'
 
