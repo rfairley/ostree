@@ -2569,16 +2569,16 @@ get_var_dfd (OstreeSysroot      *self,
 }
 
 static gboolean
-deployment_get_kargs_config_contents (OstreeSysroot     *self,
-                                      OstreeDeployment  *deployment,
-                                      char              *path,
-                                      char             **contents_out,
-                                      GCancellable      *cancellable,
-                                      GError           **error)
+load_file_from_deployment_allow_noent (OstreeSysroot     *sysroot,
+                                       OstreeDeployment  *deployment,
+                                       char              *path,
+                                       char             **contents_out,
+                                       GCancellable      *cancellable,
+                                       GError           **error)
 {
   glnx_autofd int deployment_dfd = -1;
-  g_autofree char *deployment_path = ostree_sysroot_get_deployment_dirpath (self, deployment);
-  if (!glnx_opendirat (self->sysroot_fd, deployment_path, TRUE,
+  g_autofree char *deployment_path = ostree_sysroot_get_deployment_dirpath (sysroot, deployment);
+  if (!glnx_opendirat (sysroot->sysroot_fd, deployment_path, TRUE,
                        &deployment_dfd, error))
     return FALSE;
 
@@ -2598,54 +2598,61 @@ deployment_get_kargs_config_contents (OstreeSysroot     *self,
       if (!ret_contents)
         return FALSE;
     }
-  else
-    {
-      ret_contents = g_strdup ("");
-    }
 
   *contents_out = g_steal_pointer (&ret_contents);
 
   return TRUE;
 }
 
+/* Get a GFile* referring to the commit object at ref for the file at path. */
+static GFile*
+get_file_from_repo (OstreeRepo    *repo,
+                    const char    *ref,
+                    const char    *path,
+                    GCancellable  *cancellable,
+                    GError       **error)
+{
+  g_autoptr(GFile) root = NULL;
+  if (!ostree_repo_read_commit (repo, ref, &root,
+                                NULL, cancellable, error))
+    return NULL;
+  return g_file_resolve_relative_path (root, path);
+}
+
 static gboolean
-deployment_merge_opts (OstreeSysroot     *self,
-                       const char        *revision,
-                       OstreeDeployment  *deployment,
-                       char             **opts_out,
-                       GCancellable      *cancellable,
-                       GError           **error)
+sysroot_regenerate_kargs (OstreeSysroot     *self,
+                          const char        *revision,
+                          OstreeDeployment  *deployment,
+                          char             **kargs_out,
+                          GCancellable      *cancellable,
+                          GError           **error)
 {
   g_autoptr(GPtrArray) kargs_configs = g_ptr_array_new_with_free_func (g_free);
-  g_autofree char *kargs_config_contents = NULL;
-  if (!deployment_get_kargs_config_contents (self, deployment,
-                                             _OSTREE_SYSROOT_DEPLOYMENT_KARGS_HOST,
-                                             &kargs_config_contents,
-                                             cancellable, error))
+
+  /* Load host kargs configuration from the merge deployment, so that any
+   * configuration done on the host is carried to the next deployment. */
+  g_autofree char *host_karg_contents = NULL;
+  if (!load_file_from_deployment_allow_noent (self, deployment,
+                                              _OSTREE_SYSROOT_DEPLOYMENT_KARGS_HOST,
+                                              &host_karg_contents,
+                                              cancellable, error))
     return FALSE;
-  kargs_config_contents = g_strstrip (kargs_config_contents);
-  g_ptr_array_add (kargs_configs, g_steal_pointer (&kargs_config_contents));
-  g_autoptr(GFile) root = NULL;
-  if (!ostree_repo_read_commit (ostree_sysroot_repo (self), revision, &root,
-                                NULL, cancellable, error))
+  if (host_karg_contents)
+    g_ptr_array_add (kargs_configs, g_strstrip (g_steal_pointer (&host_karg_contents)));
+
+  /* Load base kargs configuration from the current commit, so that kargs will
+   * be written to the bootconfig as soon as the current deployment is
+   * finished (in install_deployment_kernel()). */
+  g_autofree char *base_karg_contents = NULL;
+  g_autoptr(GFile) base_karg_file = get_file_from_repo (ostree_sysroot_repo (self),
+                                                        revision,
+                                                        _OSTREE_SYSROOT_DEPLOYMENT_KARGS_BASE,
+                                                        cancellable, error);
+  if (!ot_file_load_contents_allow_not_found (base_karg_file, &base_karg_contents,
+                                              cancellable, error))
     return FALSE;
-  g_autoptr(GFile) base_file = g_file_resolve_relative_path (root, _OSTREE_SYSROOT_DEPLOYMENT_KARGS_BASE);
-  GError *local_error = NULL;
-  if (!g_file_load_contents (base_file, cancellable, &kargs_config_contents, NULL, NULL, &local_error))
-    {
-      if (g_error_matches (local_error, G_IO_ERROR, G_IO_ERROR_NOT_FOUND))
-        {
-          g_clear_error (&local_error);
-          kargs_config_contents = g_strdup ("");
-        }
-      else
-        {
-          g_propagate_error (error, local_error);
-          return FALSE;
-        }
-    }
-  kargs_config_contents = g_strstrip (kargs_config_contents);
-  g_ptr_array_add (kargs_configs, g_steal_pointer (&kargs_config_contents));
+  if (base_karg_contents)
+    g_ptr_array_add (kargs_configs, g_strstrip (g_steal_pointer (&base_karg_contents)));
 
   g_autoptr(OstreeKernelArgs) kargs = _ostree_kernel_args_new ();
   for (guint i = 0; i < kargs_configs->len; i++)
@@ -2653,7 +2660,7 @@ deployment_merge_opts (OstreeSysroot     *self,
 
   g_autofree char *kargs_contents = _ostree_kernel_args_to_string (kargs);
 
-  *opts_out = g_steal_pointer (&kargs_contents);
+  *kargs_out = g_steal_pointer (&kargs_contents);
 
   return TRUE;
 }
@@ -2700,7 +2707,7 @@ sysroot_finalize_deployment (OstreeSysroot     *self,
           g_autofree char *opts = NULL;
           if (merge_deployment)
             {
-              if (!deployment_merge_opts (self, revision, merge_deployment, &opts, cancellable, error))
+              if (!sysroot_regenerate_kargs (self, revision, merge_deployment, &opts, cancellable, error))
                 return FALSE;
               ostree_bootconfig_parser_set (ostree_deployment_get_bootconfig (deployment), "options", opts);
             }
