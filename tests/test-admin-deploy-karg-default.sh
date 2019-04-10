@@ -33,34 +33,40 @@ ${CMD_PREFIX} ostree --repo=sysroot/ostree/repo pull-local --remote=testos testo
 ${CMD_PREFIX} ostree admin deploy --os=testos testos:testos/buildmaster/x86_64-runtime
 assert_has_dir sysroot/boot/ostree/testos-${bootcsum}
 
-# Commit to and deploy a repo that has a default kargs file.
+# Configure kargs stored in the ostree commit.
 mkdir -p osdata/usr/lib/ostree-boot
 os_tree_write_file "usr/lib/ostree-boot/kargs" "FOO=USR_1 MOO=USR_2 WOO=USR_3"
-os_repository_commit "testos-repo" "1"
+os_repository_commit "testos-repo"
 
+# Upgrade to tree with newly committed kargs file.
 ${CMD_PREFIX} ostree --repo=sysroot/ostree/repo remote add --set=gpg-verify=false testos file://$(pwd)/testos-repo testos/buildmaster/x86_64-runtime
 ${CMD_PREFIX} ostree admin upgrade --os=testos
+# Sanity check a new boot directory was created after upgrading.
 assert_has_dir sysroot/boot/ostree/testos-${bootcsum}
 
 assert_file_has_content sysroot/boot/loader/entries/ostree-2-testos.conf 'FOO=USR_1'
-
-# TODO: need to check for the USR kernel args here?? i.e. should they be updated right after upgrading
+assert_file_has_content sysroot/boot/loader/entries/ostree-2-testos.conf 'MOO=USR_2'
+assert_file_has_content sysroot/boot/loader/entries/ostree-2-testos.conf 'WOO=USR_3'
+assert_not_file_has_content sysroot/boot/loader/entries/ostree-2-testos.conf 'ostree-kargs-override'
 
 # Configure kargs through the host config file.
 rev=$(${CMD_PREFIX} ostree --repo=sysroot/ostree/repo rev-parse testos/buildmaster/x86_64-runtime)
 export rev
 echo "rev=${rev}"
 etc=sysroot/ostree/deploy/testos/deploy/${rev}.0/etc
-cd ${etc}
-mkdir -p ostree
-cd ${test_tmpdir}
+assert_has_dir ${etc}
+mkdir -p ${etc}/ostree
 echo "HELLO=ETC_1 MELLO=ETC_2 BELLO=ETC_3" > ${etc}/ostree/kargs
 
-# Re-deploy with configured kernel args.
+# Re-deploy with host-configured kernel args.
 ${CMD_PREFIX} ostree admin deploy --os=testos testos:testos/buildmaster/x86_64-runtime
 
 assert_file_has_content sysroot/boot/loader/entries/ostree-2-testos.conf 'HELLO=ETC_1'
+assert_file_has_content sysroot/boot/loader/entries/ostree-2-testos.conf 'MELLO=ETC_2'
+assert_file_has_content sysroot/boot/loader/entries/ostree-2-testos.conf 'BELLO=ETC_3'
 assert_file_has_content sysroot/boot/loader/entries/ostree-2-testos.conf 'FOO=USR_1'
+assert_file_has_content sysroot/boot/loader/entries/ostree-2-testos.conf 'MOO=USR_2'
+assert_file_has_content sysroot/boot/loader/entries/ostree-2-testos.conf 'WOO=USR_3'
 assert_not_file_has_content sysroot/boot/loader/entries/ostree-2-testos.conf 'ostree-kargs-override'
 
 echo "ok default kargs"
