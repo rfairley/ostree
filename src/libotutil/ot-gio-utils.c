@@ -184,7 +184,7 @@ ot_file_get_path_cached (GFile *file)
  * Load the contents of file, allowing G_IO_ERROR_NOT_FOUND.
  * If file exists, return the contents in out_contents (otherwise out_contents
  * holds NULL).
- * 
+ *
  * Return FALSE for any other error.
  */
 gboolean
