@@ -79,4 +79,17 @@ gs_file_get_path_cached (GFile *file)
   return ot_file_get_path_cached (file);
 }
 
+gboolean
+ot_file_load_contents_allow_not_found (GFile         *file,
+                                       char         **out_contents,
+                                       GCancellable  *cancellable,
+                                       GError       **error);
+
+gboolean
+ot_file_read_allow_noent (int            dfd,
+                          char          *path,
+                          char         **out_contents,
+                          GCancellable  *cancellable,
+                          GError       **error);
+
 G_END_DECLS

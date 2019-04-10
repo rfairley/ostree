@@ -177,3 +177,64 @@ ot_file_get_path_cached (GFile *file)
 
   return path;
 }
+
+/**
+ * ot_file_load_contents_allow_not_found:
+ *
+ * Load the contents of file, allowing G_IO_ERROR_NOT_FOUND.
+ * If file exists, return the contents in out_contents (otherwise out_contents
+ * holds NULL).
+ *
+ * Return FALSE for any other error.
+ */
+gboolean
+ot_file_load_contents_allow_not_found (GFile         *file,
+                                       char         **out_contents,
+                                       GCancellable  *cancellable,
+                                       GError       **error)
+{
+  g_return_val_if_fail (file != NULL, FALSE);
+
+  GError *local_error = NULL;
+  g_autofree char *ret_contents = NULL;
+  if (!g_file_load_contents (file, cancellable, &ret_contents, NULL, NULL, &local_error))
+    {
+      if (g_error_matches (local_error, G_IO_ERROR, G_IO_ERROR_NOT_FOUND))
+        {
+          g_clear_error (&local_error);
+        }
+      else
+        {
+          g_propagate_error (error, local_error);
+          return FALSE;
+        }
+    }
+
+  ot_transfer_out_value (out_contents, &ret_contents);
+  return TRUE;
+}
+
+gboolean
+ot_file_read_allow_noent (int            dfd,
+                          char          *path,
+                          char         **out_contents,
+                          GCancellable  *cancellable,
+                          GError       **error)
+{
+  struct stat stbuf;
+  if (!glnx_fstatat_allow_noent (dfd, path, &stbuf, 0, error))
+    return FALSE;
+  const gboolean file_exists = (errno == 0);
+
+  g_autofree char *ret_contents = NULL;
+  if (file_exists)
+    {
+      ret_contents = glnx_file_get_contents_utf8_at (dfd, path, NULL,
+                                                     cancellable, error);
+      if (!ret_contents)
+        return FALSE;
+    }
+
+  ot_transfer_out_value (out_contents, &ret_contents);
+  return TRUE;
+}
