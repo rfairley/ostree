@@ -2578,7 +2578,6 @@ deployment_get_kargs_config_contents (OstreeSysroot     *self,
 {
   glnx_autofd int deployment_dfd = -1;
   g_autofree char *deployment_path = ostree_sysroot_get_deployment_dirpath (self, deployment);
-  g_print ("deployment_path: %s\n", deployment_path);
   if (!glnx_opendirat (self->sysroot_fd, deployment_path, TRUE,
                        &deployment_dfd, error))
     return FALSE;
@@ -2603,7 +2602,6 @@ deployment_get_kargs_config_contents (OstreeSysroot     *self,
     {
       ret_contents = g_strdup ("");
     }
-  ret_contents = g_strstrip (ret_contents);
 
   *contents_out = g_steal_pointer (&ret_contents);
 
@@ -2625,9 +2623,8 @@ deployment_merge_opts (OstreeSysroot     *self,
                                              &kargs_config_contents,
                                              cancellable, error))
     return FALSE;
-  g_print ("kargs_config_contents: %s\n", kargs_config_contents);
+  kargs_config_contents = g_strstrip (kargs_config_contents);
   g_ptr_array_add (kargs_configs, g_steal_pointer (&kargs_config_contents));
-  g_print ("revision: %s\n", revision);
   g_autoptr(GFile) root = NULL;
   if (!ostree_repo_read_commit (ostree_sysroot_repo (self), revision, &root,
                                 NULL, cancellable, error))
@@ -2647,7 +2644,7 @@ deployment_merge_opts (OstreeSysroot     *self,
           return FALSE;
         }
     }
-  g_print ("kargs_config_contents: %s\n", kargs_config_contents);
+  kargs_config_contents = g_strstrip (kargs_config_contents);
   g_ptr_array_add (kargs_configs, g_steal_pointer (&kargs_config_contents));
 
   g_autoptr(OstreeKernelArgs) kargs = _ostree_kernel_args_new ();
@@ -2674,15 +2671,12 @@ sysroot_finalize_deployment (OstreeSysroot     *self,
   glnx_autofd int deployment_dfd = -1;
   if (!glnx_opendirat (self->sysroot_fd, deployment_path, TRUE, &deployment_dfd, error))
     return FALSE;
-  
-  g_print ("deployment_path: %s\n", deployment_path);
 
   /* If we didn't get an override in this deployment, decide whether to copy
    * kargs directly from the merge deployment, or regenerate kargs from the
    * config files present in the merge deployment. */
   if (!override_kernel_argv)
     {
-      g_print ("in !override_kernel_argv\n");
       OstreeBootconfigParser *merge_bootconfig = NULL;
       gboolean kargs_overridden = FALSE;
       if (merge_deployment)
@@ -2695,7 +2689,6 @@ sysroot_finalize_deployment (OstreeSysroot     *self,
 
       if (kargs_overridden)
         {
-          g_print ("in kargs_overridden\n");
           /* Copy kargs from the merge deployment. */
           g_assert (merge_bootconfig);
           const char *opts = ostree_bootconfig_parser_get (merge_bootconfig, "options");
@@ -2703,7 +2696,6 @@ sysroot_finalize_deployment (OstreeSysroot     *self,
         }
       else
         {
-          g_print ("in !kargs_overridden\n");
           /* Regenerate kargs from merge deployment config. */
           g_autofree char *opts = NULL;
           if (merge_deployment)
@@ -2796,7 +2788,6 @@ ostree_sysroot_deploy_tree (OstreeSysroot     *self,
                             GCancellable      *cancellable,
                             GError           **error)
 {
-  g_print ("in ostree_sysroot_deploy_tree\n");
   g_autoptr(OstreeDeployment) deployment = NULL;
   if (!sysroot_initialize_deployment (self, osname, revision, origin, override_kernel_argv,
                                       &deployment, cancellable, error))

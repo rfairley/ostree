@@ -35,7 +35,7 @@ assert_has_dir sysroot/boot/ostree/testos-${bootcsum}
 
 # Commit to and deploy a repo that has a default kargs file.
 mkdir -p osdata/usr/lib/ostree-boot
-os_tree_write_file "usr/lib/ostree-boot/kargs" "FOO=USR_1 MOO=USR_2 WOO=USR_3 ostree=yay"
+os_tree_write_file "usr/lib/ostree-boot/kargs" "FOO=USR_1 MOO=USR_2 WOO=USR_3"
 os_repository_commit "testos-repo" "1"
 
 ${CMD_PREFIX} ostree --repo=sysroot/ostree/repo remote add --set=gpg-verify=false testos file://$(pwd)/testos-repo testos/buildmaster/x86_64-runtime

@@ -80,7 +80,6 @@ ostree_builtin_cat (int argc, char **argv, OstreeCommandInvocation *invocation, 
   for (int i = 2; i < argc; i++)
     {
       g_autoptr(GFile) f = g_file_resolve_relative_path (root, argv[i]);
-      g_print("g_file_get_parse_name(f): %s\n", g_file_get_parse_name(f));
 
       if (!cat_one_file (f, stdout_stream, cancellable, error))
         return FALSE;
