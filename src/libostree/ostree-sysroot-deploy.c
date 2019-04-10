@@ -2633,7 +2633,7 @@ sysroot_regenerate_kargs (OstreeSysroot     *self,
    * configuration done on the host is carried to the next deployment. */
   g_autofree char *host_karg_contents = NULL;
   if (!load_file_from_deployment_allow_noent (self, deployment,
-                                              _OSTREE_SYSROOT_DEPLOYMENT_KARGS_HOST,
+                                              _OSTREE_SYSROOT_KARGS_HOST,
                                               &host_karg_contents,
                                               cancellable, error))
     return FALSE;
@@ -2646,7 +2646,7 @@ sysroot_regenerate_kargs (OstreeSysroot     *self,
   g_autofree char *base_karg_contents = NULL;
   g_autoptr(GFile) base_karg_file = get_file_from_repo (ostree_sysroot_repo (self),
                                                         revision,
-                                                        _OSTREE_SYSROOT_DEPLOYMENT_KARGS_BASE,
+                                                        _OSTREE_SYSROOT_KARGS_BASE,
                                                         cancellable, error);
   if (!ot_file_load_contents_allow_not_found (base_karg_file, &base_karg_contents,
                                               cancellable, error))
