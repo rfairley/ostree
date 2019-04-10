@@ -2578,6 +2578,7 @@ deployment_get_kargs_config_contents (OstreeSysroot     *self,
 {
   glnx_autofd int deployment_dfd = -1;
   g_autofree char *deployment_path = ostree_sysroot_get_deployment_dirpath (self, deployment);
+  g_print ("deployment_path: %s\n", deployment_path);
   if (!glnx_opendirat (self->sysroot_fd, deployment_path, TRUE,
                        &deployment_dfd, error))
     return FALSE;
@@ -2624,18 +2625,28 @@ deployment_merge_opts (OstreeSysroot     *self,
                                              &kargs_config_contents,
                                              cancellable, error))
     return FALSE;
+  g_print ("kargs_config_contents: %s\n", kargs_config_contents);
   g_ptr_array_add (kargs_configs, g_steal_pointer (&kargs_config_contents));
   g_print ("revision: %s\n", revision);
   g_autoptr(GFile) root = NULL;
   if (!ostree_repo_read_commit (ostree_sysroot_repo (self), revision, &root,
                                 NULL, cancellable, error))
     return FALSE;
-  g_print("g_file_get_parse_name(root): %s\n", g_file_get_parse_name(root));
   g_autoptr(GFile) base_file = g_file_resolve_relative_path (root, _OSTREE_SYSROOT_DEPLOYMENT_KARGS_BASE);
-  g_print("g_file_get_parse_name(base_file): %s\n", g_file_get_parse_name(base_file));
-  if (!g_file_load_contents (base_file, cancellable, &kargs_config_contents, NULL, NULL, error))
-    return FALSE;
-
+  GError *local_error = NULL;
+  if (!g_file_load_contents (base_file, cancellable, &kargs_config_contents, NULL, NULL, &local_error))
+    {
+      if (g_error_matches (local_error, G_IO_ERROR, G_IO_ERROR_NOT_FOUND))
+        {
+          g_clear_error (&local_error);
+          kargs_config_contents = g_strdup ("");
+        }
+      else
+        {
+          g_propagate_error (error, local_error);
+          return FALSE;
+        }
+    }
   g_print ("kargs_config_contents: %s\n", kargs_config_contents);
   g_ptr_array_add (kargs_configs, g_steal_pointer (&kargs_config_contents));
 
