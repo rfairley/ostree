@@ -2650,9 +2650,9 @@ deployment_merge_opts (OstreeSysroot     *self,
   g_autoptr(OstreeKernelArgs) kargs = _ostree_kernel_args_new ();
   for (guint i = 0; i < kargs_configs->len; i++)
     _ostree_kernel_args_parse_append (kargs, kargs_configs->pdata[i]);
-  
+
   g_autofree char *kargs_contents = _ostree_kernel_args_to_string (kargs);
-  
+
   *opts_out = g_steal_pointer (&kargs_contents);
 
   return TRUE;
@@ -2674,7 +2674,7 @@ sysroot_finalize_deployment (OstreeSysroot     *self,
 
   /* If we didn't get an override in this deployment, decide whether to copy
    * kargs directly from the merge deployment, or regenerate kargs from the
-   * config files present in the merge deployment. */
+   * default config files. */
   if (!override_kernel_argv)
     {
       OstreeBootconfigParser *merge_bootconfig = NULL;
@@ -2696,7 +2696,7 @@ sysroot_finalize_deployment (OstreeSysroot     *self,
         }
       else
         {
-          /* Regenerate kargs from merge deployment config. */
+          /* Regenerate kargs from the default config files. */
           g_autofree char *opts = NULL;
           if (merge_deployment)
             {

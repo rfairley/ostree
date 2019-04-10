@@ -38,7 +38,7 @@ mkdir -p osdata/usr/lib/ostree-boot
 os_tree_write_file "usr/lib/ostree-boot/kargs" "FOO=USR_1 MOO=USR_2 WOO=USR_3"
 os_repository_commit "testos-repo"
 
-# Upgrade to tree with newly committed kargs file.
+# Upgrade to tree with newly-committed kargs file.
 ${CMD_PREFIX} ostree --repo=sysroot/ostree/repo remote add --set=gpg-verify=false testos file://$(pwd)/testos-repo testos/buildmaster/x86_64-runtime
 ${CMD_PREFIX} ostree admin upgrade --os=testos
 # Sanity check a new boot directory was created after upgrading.
@@ -70,3 +70,7 @@ assert_file_has_content sysroot/boot/loader/entries/ostree-2-testos.conf 'WOO=US
 assert_not_file_has_content sysroot/boot/loader/entries/ostree-2-testos.conf 'ostree-kargs-override'
 
 echo "ok default kargs"
+
+# Tests needed:
+# - downgrading
+# - staging a deployment
