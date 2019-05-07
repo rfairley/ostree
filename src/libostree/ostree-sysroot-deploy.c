@@ -2465,6 +2465,7 @@ _ostree_deployment_set_bootconfig_from_kargs (OstreeDeployment *deployment,
       _ostree_kernel_args_append_argv (kargs, override_kernel_argv);
       g_autofree char *new_options = _ostree_kernel_args_to_string (kargs);
       ostree_bootconfig_parser_set (bootconfig, "options", new_options);
+      ostree_bootconfig_parser_set (bootconfig, "ostree-kargs-generated-from-config", "false");
     }
 }
 
@@ -2575,17 +2576,34 @@ sysroot_finalize_deployment (OstreeSysroot     *self,
   if (!glnx_opendirat (self->sysroot_fd, deployment_path, TRUE, &deployment_dfd, error))
     return FALSE;
 
-  /* Only use the merge if we didn't get an override */
-  if (!override_kernel_argv && merge_deployment)
+  /* If we didn't get an override in this deployment, copy kargs directly from
+   * the merge deployment. */
+  if (!override_kernel_argv)
     {
-      /* Override the bootloader arguments */
-      OstreeBootconfigParser *merge_bootconfig = ostree_deployment_get_bootconfig (merge_deployment);
-      if (merge_bootconfig)
+      OstreeBootconfigParser *merge_bootconfig = NULL;
+      gboolean kargs_overridden = FALSE;
+      if (merge_deployment)
         {
-          const char *opts = ostree_bootconfig_parser_get (merge_bootconfig, "options");
-          ostree_bootconfig_parser_set (ostree_deployment_get_bootconfig (deployment), "options", opts);
+          merge_bootconfig = ostree_deployment_get_bootconfig (merge_deployment);
+          if (merge_bootconfig)
+            {
+              /* Copy kargs from the merge deployment. */
+              const char *opts = ostree_bootconfig_parser_get (merge_bootconfig, "options");
+              ostree_bootconfig_parser_set (ostree_deployment_get_bootconfig (deployment), "options", opts);
+              const char *kargs_generated_flag = ostree_bootconfig_parser_get (merge_bootconfig, "ostree-kargs-generated-from-config");
+              /* If the ostree-kargs-generated-from-config flag was not present,
+               * assume they were overriden by the user so that we copy them
+               * from the previous deployment (keeping any potential edits the
+               * user made). */
+              kargs_overridden = kargs_generated_flag == NULL || g_str_equal (kargs_generated_flag, "false");
+            }
+          if (kargs_overridden)
+            {
+              /* Set the flag in the new bootconfig if we previously detected
+               * an override. */
+              ostree_bootconfig_parser_set (ostree_deployment_get_bootconfig (deployment), "ostree-kargs-generated-from-config", "true");
+            }
         }
-
     }
 
   if (merge_deployment)

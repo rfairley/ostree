@@ -26,7 +26,7 @@ set -euo pipefail
 # Exports OSTREE_SYSROOT so --sysroot not needed.
 setup_os_repository "archive" "syslinux"
 
-echo "1..3"
+echo "1..7"
 
 ${CMD_PREFIX} ostree --repo=sysroot/ostree/repo pull-local --remote=testos testos-repo testos/buildmaster/x86_64-runtime
 rev=$(${CMD_PREFIX} ostree --repo=sysroot/ostree/repo rev-parse testos/buildmaster/x86_64-runtime)
@@ -61,9 +61,38 @@ echo "ok deploy --karg-proc-cmdline"
 ${CMD_PREFIX} ostree admin status
 ${CMD_PREFIX} ostree admin undeploy 0
 
-${CMD_PREFIX} ostree admin deploy  --os=testos --karg-append=APPENDARG=VALAPPEND --karg-append=APPENDARG=2NDAPPEND testos:testos/buildmaster/x86_64-runtime
+${CMD_PREFIX} ostree admin deploy --os=testos --karg-append=APPENDARG=VALAPPEND --karg-append=APPENDARG=2NDAPPEND testos:testos/buildmaster/x86_64-runtime
 assert_file_has_content sysroot/boot/loader/entries/ostree-2-testos.conf 'options.*FOO=BAR'
 assert_file_has_content sysroot/boot/loader/entries/ostree-2-testos.conf 'options.*TESTARG=TESTVALUE'
 assert_file_has_content sysroot/boot/loader/entries/ostree-2-testos.conf 'options.*APPENDARG=VALAPPEND .*APPENDARG=2NDAPPEND'
 
 echo "ok deploy --karg-append"
+
+${CMD_PREFIX} ostree admin status
+${CMD_PREFIX} ostree admin undeploy 0
+
+${CMD_PREFIX} ostree admin deploy --os=testos --karg-append=APPENDARG=VALAPPEND --karg-append=APPENDARG=2NDAPPEND testos:testos/buildmaster/x86_64-runtime
+assert_file_has_content sysroot/boot/loader/entries/ostree-2-testos.conf 'ostree-kargs-generated-from-config.*false'
+
+echo "ok kargs generated flag"
+
+${CMD_PREFIX} ostree admin deploy --os=testos testos:testos/buildmaster/x86_64-runtime
+assert_file_has_content sysroot/boot/loader/entries/ostree-2-testos.conf 'ostree-kargs-generated-from-config.*false'
+
+echo "ok kargs generated flag persists"
+
+${CMD_PREFIX} ostree admin status
+# Clear both previous deployments, to start with clean bootconfig.
+${CMD_PREFIX} ostree admin undeploy 1
+${CMD_PREFIX} ostree admin undeploy 0
+
+# Create an extra deployment to use as the merge deployment.
+${CMD_PREFIX} ostree admin deploy --os=testos testos:testos/buildmaster/x86_64-runtime
+assert_not_file_has_content sysroot/boot/loader/entries/ostree-2-testos.conf 'ostree-kargs-generated-from-config'
+
+echo "ok no kargs generated flag"
+
+${CMD_PREFIX} ostree admin deploy --os=testos testos:testos/buildmaster/x86_64-runtime
+assert_file_has_content sysroot/boot/loader/entries/ostree-2-testos.conf 'ostree-kargs-generated-from-config.*false'
+
+echo "ok kargs generated flag from no kargs generated flag"
