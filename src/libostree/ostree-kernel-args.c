@@ -22,6 +22,7 @@
 #include "ostree-kernel-args.h"
 #include "libglnx.h"
 
+#include <ctype.h>
 #include <string.h>
 
 struct _OstreeKernelArgs {
@@ -208,23 +209,50 @@ _ostree_kernel_args_append_proc_cmdline (OstreeKernelArgs *kargs,
   return TRUE;
 }
 
+static char *
+next_arg(char *args, char** arg)
+{
+  g_strchomp (args);
+  *arg = &args[0];
+  int i = 0;
+  char *c = NULL;
+  gboolean in_quote = FALSE;
+  gboolean past_quote = FALSE;
+  gboolean past_equals = FALSE;
+  while ((*c = args[i++]) != '\0')
+    {
+      if (in_quote)
+        {
+          in_quote = *c != '\"';
+          past_quote = TRUE;
+        }
+      else
+        {
+          past_equals = *c == '=' || past_equals;
+          in_quote = past_equals && (*c == '\"') && !past_quote;
+          if (isspace(*c))
+            {
+              *c = '\0';
+              return (c + 1);
+            }
+        }
+    }
+  return c;
+}
+
 void
 _ostree_kernel_args_parse_append (OstreeKernelArgs *kargs,
                                   const char       *options)
 {
-  char **args = NULL;
-  char **iter;
-
   if (!options)
     return;
-  
-  args = g_strsplit (options, " ", -1);
-  for (iter = args; *iter; iter++)
-    {
-      char *arg = *iter;
-      _ostree_kernel_args_append (kargs, arg);
-    }
-  g_strfreev (args);
+
+  g_autofree char *args = g_strdup (options);
+  while (*args) {
+    char *arg = NULL;
+    args = next_arg (args, &arg);
+    _ostree_kernel_args_append (kargs, arg);
+  }
 }
 
 OstreeKernelArgs *
