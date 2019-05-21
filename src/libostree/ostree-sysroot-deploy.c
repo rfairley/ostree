@@ -2467,6 +2467,11 @@ _ostree_deployment_set_bootconfig_from_kargs (OstreeDeployment *deployment,
       _ostree_kernel_args_append_argv (kargs, override_kernel_argv);
       g_autofree char *new_options = _ostree_kernel_args_to_string (kargs);
       ostree_bootconfig_parser_set (bootconfig, "options", new_options);
+      /* Indicate explicitly that the kargs we just set were not generated from
+       * the config directories. */
+      ostree_bootconfig_parser_set (bootconfig,
+                                    "ostree-kargs-generated-from-config",
+                                    "false");
     }
 }
 
@@ -2564,9 +2569,158 @@ get_var_dfd (OstreeSysroot      *self,
   return glnx_opendirat (base_dfd, base_path, TRUE, ret_fd, error);
 }
 
+/* Get a GFile* referring to the commit object at ref for the file at path. */
+static GFile*
+get_file_from_repo (OstreeRepo    *repo,
+                    const char    *ref,
+                    const char    *path,
+                    GCancellable  *cancellable,
+                    GError       **error)
+{
+  g_autoptr(GFile) root = NULL;
+  if (!ostree_repo_read_commit (repo, ref, &root,
+                                NULL, cancellable, error))
+    return NULL;
+  return g_file_resolve_relative_path (root, path);
+}
+
+static gboolean
+collect_karg_from_tree (gpointer key,
+                        gpointer value,
+                        gpointer kargs_data)
+{
+  const char *karg_contents = value;
+  OstreeKernelArgs *kargs = kargs_data;
+
+  _ostree_kernel_args_parse_append (kargs, karg_contents);
+
+  return FALSE;
+}
+
+static gboolean
+sysroot_regenerate_kargs (OstreeSysroot  *self,
+                          const char     *revision,
+                          int             deployment_dfd,
+                          char          **out_kargs,
+                          GCancellable   *cancellable,
+                          GError        **error)
+{
+  g_autoptr(GTree) kargs_configs = g_tree_new_full ((GCompareDataFunc)g_ascii_strcasecmp,
+                                                    NULL, g_free, g_free);
+  g_auto(GLnxDirFdIterator) dfd_iter = { 0, };
+  gboolean host_dir_exists = FALSE;
+  if (!ot_dfd_iter_init_allow_noent (deployment_dfd,
+                                    _OSTREE_SYSROOT_KARGS_HOST, &dfd_iter,
+                                    &host_dir_exists, error))
+    return FALSE;
+
+  if (host_dir_exists)
+    {
+      while (TRUE)
+        {
+          struct dirent *dent = NULL;
+
+          if (!glnx_dirfd_iterator_next_dent_ensure_dtype (&dfd_iter, &dent,
+                                                          cancellable, error))
+            return FALSE;
+          if (dent == NULL)
+            break;
+
+          const char *host_karg_name = dent->d_name;
+
+          g_autofree char *host_karg_contents = NULL;
+          if (dent->d_type == DT_REG || dent->d_type == DT_LNK)
+            {
+              g_autofree char *host_karg_filepath =
+                g_build_filename (_OSTREE_SYSROOT_KARGS_HOST, host_karg_name, NULL);
+
+              host_karg_contents = glnx_file_get_contents_utf8_at (deployment_dfd,
+                                                                   host_karg_filepath,
+                                                                   NULL, cancellable,
+                                                                   error);
+              if (!host_karg_contents)
+                return FALSE;
+            }
+          else
+            {
+              continue;
+            }
+
+          g_strstrip (host_karg_contents);
+          g_tree_insert (kargs_configs, g_strdup (host_karg_name),
+                         g_steal_pointer (&host_karg_contents));
+        }
+    }
+
+  struct stat stbuf;
+  if (!glnx_fstatat_allow_noent (deployment_dfd, _OSTREE_SYSROOT_KARGS_BASE,
+                                 &stbuf, 0, error))
+    return FALSE;
+  const gboolean base_dir_exists = (errno == 0);
+
+  if (base_dir_exists)
+    {
+      /* Load base kargs configuration from the current commit, so that kargs will
+      * be written to the bootconfig as soon as the current deployment is
+      * finished (in install_deployment_kernel()). */
+      g_autoptr(GFile) base_karg_file = get_file_from_repo (ostree_sysroot_repo (self),
+                                                            revision,
+                                                            _OSTREE_SYSROOT_KARGS_BASE,
+                                                            cancellable, error);
+
+      g_autoptr(GFileEnumerator) dir_enum = NULL;
+      g_autoptr(GFile) child = NULL;
+      g_autoptr(GFileInfo) child_info = NULL;
+      g_autoptr(GError) temp_error = NULL;
+      dir_enum = g_file_enumerate_children (base_karg_file,
+                                            OSTREE_GIO_FAST_QUERYINFO,
+                                            G_FILE_QUERY_INFO_NOFOLLOW_SYMLINKS,
+                                            cancellable, error);
+      if (!dir_enum)
+        return FALSE;
+
+      while ((child_info = g_file_enumerator_next_file (dir_enum, NULL, &temp_error)) != NULL)
+        {
+          g_clear_object (&child);
+          const char *base_karg_name = g_file_info_get_name (child_info);
+          child = g_file_get_child (base_karg_file, base_karg_name);
+
+          g_autofree char *base_karg_contents = NULL;
+          if (!g_file_load_contents (child, cancellable,
+                                    &base_karg_contents, NULL, NULL, &temp_error))
+            {
+              g_propagate_error (error, g_steal_pointer (&temp_error));
+              return FALSE;
+            }
+          if (base_karg_contents && !g_tree_lookup (kargs_configs, base_karg_name))
+            {
+              g_strstrip (base_karg_contents);
+              g_tree_insert (kargs_configs, g_strdup (base_karg_name),
+                             g_strstrip (g_steal_pointer (&base_karg_contents)));
+            }
+          g_clear_object (&child_info);
+        }
+      if (temp_error)
+        {
+          g_propagate_error (error, g_steal_pointer (&temp_error));
+          return FALSE;
+        }
+    }
+
+  g_autoptr(OstreeKernelArgs) kargs = _ostree_kernel_args_new ();
+
+  g_tree_foreach (kargs_configs, (GTraverseFunc)collect_karg_from_tree, kargs);
+
+  g_autofree char *kargs_contents = _ostree_kernel_args_to_string (kargs);
+
+  ot_transfer_out_value (out_kargs, &kargs_contents);
+  return TRUE;
+}
+
 static gboolean
 sysroot_finalize_deployment (OstreeSysroot     *self,
                              OstreeDeployment  *deployment,
+                             const char        *revision,
                              char             **override_kernel_argv,
                              OstreeDeployment  *merge_deployment,
                              GCancellable      *cancellable,
@@ -2577,25 +2731,61 @@ sysroot_finalize_deployment (OstreeSysroot     *self,
   if (!glnx_opendirat (self->sysroot_fd, deployment_path, TRUE, &deployment_dfd, error))
     return FALSE;
 
-  /* Only use the merge if we didn't get an override */
-  if (!override_kernel_argv && merge_deployment)
-    {
-      /* Override the bootloader arguments */
-      OstreeBootconfigParser *merge_bootconfig = ostree_deployment_get_bootconfig (merge_deployment);
-      if (merge_bootconfig)
-        {
-          const char *opts = ostree_bootconfig_parser_get (merge_bootconfig, "options");
-          ostree_bootconfig_parser_set (ostree_deployment_get_bootconfig (deployment), "options", opts);
-        }
-
-    }
-
   if (merge_deployment)
     {
-      /* And do the /etc merge */
+      /* Do the /etc merge. */
       if (!merge_configuration_from (self, merge_deployment, deployment, deployment_dfd,
                                      cancellable, error))
         return FALSE;
+    }
+
+  /* If we didn't get an override in this deployment, and we got a merge
+   * deployment, check if we should copy the kargs from the merge
+   * deployment. */
+  gboolean kargs_generated_from_config = FALSE;
+  if (!override_kernel_argv && merge_deployment)
+    {
+      OstreeBootconfigParser *merge_bootconfig = ostree_deployment_get_bootconfig (merge_deployment);
+      if (merge_bootconfig)
+        {
+          /* Flag that indicates that the kargs in the previous deployment were
+           * generated from the deployment config. If this is the case, then
+           * we continue to generate from the config rather than copy over. */
+          kargs_generated_from_config = g_strcmp0 (ostree_bootconfig_parser_get (merge_bootconfig,
+                                                                                 "ostree-kargs-generated-from-config"),
+                                                   "true") == 0;
+          if (!kargs_generated_from_config)
+            {
+              /* Copy kargs from the merge deployment. */
+              const char *opts = ostree_bootconfig_parser_get (merge_bootconfig, "options");
+              ostree_bootconfig_parser_set (ostree_deployment_get_bootconfig (deployment),
+                                            "options", opts);
+              ostree_bootconfig_parser_set (ostree_deployment_get_bootconfig (deployment),
+                                            "ostree-kargs-generated-from-config",
+                                            "false");
+            }
+        }
+    }
+
+  /* If we didn't get an override in this deployment, and we received
+   * indication to regenerate kargs from the deployment config, regenerate
+   * the kargs. Also if there is no merge deployment, then default to
+   * regenerating kargs from this deployment's config. */
+  if (!override_kernel_argv && (kargs_generated_from_config || !merge_deployment))
+    {
+      /* Note this occurs after merge_configuration_from() so that
+       * /etc/ostree/kargs as a result of the /etc merge is used. */
+      g_autofree char *opts = NULL;
+      if (!sysroot_regenerate_kargs (self, revision, deployment_dfd, &opts,
+                                      cancellable, error))
+        return FALSE;
+      OstreeBootconfigParser *bootconfig = ostree_deployment_get_bootconfig (deployment);
+      ostree_bootconfig_parser_set (bootconfig, "options", opts);
+      ostree_bootconfig_parser_set_option_line (bootconfig, "options",
+                                                "# ostree: options generated from /usr/lib/ostree-boot/kargs.d and /etc/ostree/kargs.d");
+      ostree_bootconfig_parser_set (bootconfig,
+                                    "ostree-kargs-generated-from-config",
+                                    "true");
     }
 
   const char *osdeploypath = glnx_strjoina ("ostree/deploy/", ostree_deployment_get_osname (deployment));
@@ -2676,7 +2866,8 @@ ostree_sysroot_deploy_tree (OstreeSysroot     *self,
                                       &deployment, cancellable, error))
     return FALSE;
 
-  if (!sysroot_finalize_deployment (self, deployment, override_kernel_argv,
+  if (!sysroot_finalize_deployment (self, deployment, revision,
+                                    override_kernel_argv,
                                     provided_merge_deployment,
                                     cancellable, error))
     return FALSE;
@@ -2949,8 +3140,8 @@ _ostree_sysroot_finalize_staged (OstreeSysroot *self,
   if (!glnx_unlinkat (AT_FDCWD, _OSTREE_SYSROOT_RUNSTATE_STAGED, 0, error))
     return FALSE;
 
-  if (!sysroot_finalize_deployment (self, self->staged_deployment, kargs, merge_deployment,
-                                    cancellable, error))
+  if (!sysroot_finalize_deployment (self, self->staged_deployment, self->staged_deployment->csum,
+                                    kargs, merge_deployment, cancellable, error))
     return FALSE;
 
   /* Now, take ownership of the staged state, as normally the API below strips
