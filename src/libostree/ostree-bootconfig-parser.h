@@ -70,6 +70,11 @@ void ostree_bootconfig_parser_set (OstreeBootconfigParser  *self,
                                    const char      *value);
 
 _OSTREE_PUBLIC
+void ostree_bootconfig_parser_set_option_line (OstreeBootconfigParser  *self,
+                                               const char      *key,
+                                               const char      *line);
+
+_OSTREE_PUBLIC
 const char *ostree_bootconfig_parser_get (OstreeBootconfigParser  *self,
                                           const char      *key);
 

@@ -30,6 +30,8 @@ struct _OstreeBootconfigParser
   const char   *separators;
 
   GHashTable   *options;
+  /* Text written before the corresponding option. */
+  GHashTable   *option_line;
   GPtrArray    *lines;
 };
 
@@ -53,6 +55,9 @@ ostree_bootconfig_parser_clone (OstreeBootconfigParser *self)
 
   GLNX_HASH_TABLE_FOREACH_KV (self->options, const char*, k, const char*, v)
     g_hash_table_replace (parser->options, g_strdup (k), g_strdup (v));
+
+  GLNX_HASH_TABLE_FOREACH_KV (self->option_line, const char*, k, const char*, v)
+    g_hash_table_replace (parser->option_line, g_strdup (k), g_strdup (v));
 
   return parser;
 }
@@ -86,7 +91,8 @@ ostree_bootconfig_parser_parse_at (OstreeBootconfigParser  *self,
       const char *line = *iter;
       char *keyname = "";
 
-      if (g_ascii_isalpha (*line))
+      /* If line begins with '#' then it is a comment; add only the line. */
+      if (g_ascii_isalpha (*line) && *line != '#')
         {
           char **items = NULL;
           items = g_strsplit_set (line, self->separators, 2);
@@ -127,6 +133,14 @@ ostree_bootconfig_parser_set (OstreeBootconfigParser  *self,
   g_hash_table_replace (self->options, g_strdup (key), g_strdup (value));
 }
 
+void
+ostree_bootconfig_parser_set_option_line (OstreeBootconfigParser  *self,
+                                          const char      *key,
+                                          const char      *line)
+{
+  g_hash_table_replace (self->option_line, g_strdup (key), g_strdup (line));
+}
+
 const char *
 ostree_bootconfig_parser_get (OstreeBootconfigParser  *self,
                               const char      *key)
@@ -140,6 +154,13 @@ write_key (OstreeBootconfigParser    *self,
            const char                *key,
            const char                *value)
 {
+  char *option_line = NULL;
+  if ((option_line = g_hash_table_lookup (self->option_line, key)))
+    {
+      g_string_append (buf, option_line);
+      g_string_append_c (buf, '\n');
+    }
+
   g_string_append (buf, key);
   g_string_append_c (buf, self->separators[0]);
   g_string_append (buf, value);
@@ -210,6 +231,7 @@ ostree_bootconfig_parser_finalize (GObject *object)
   OstreeBootconfigParser *self = OSTREE_BOOTCONFIG_PARSER (object);
 
   g_hash_table_unref (self->options);
+  g_hash_table_unref (self->option_line);
   g_ptr_array_unref (self->lines);
 
   G_OBJECT_CLASS (ostree_bootconfig_parser_parent_class)->finalize (object);
@@ -219,6 +241,7 @@ static void
 ostree_bootconfig_parser_init (OstreeBootconfigParser *self)
 {
   self->options = g_hash_table_new_full (g_str_hash, g_str_equal, g_free, g_free);
+  self->option_line = g_hash_table_new_full (g_str_hash, g_str_equal, g_free, g_free);
   self->lines = g_ptr_array_new_with_free_func ((GDestroyNotify)g_variant_unref);
 }
 
