@@ -2628,14 +2628,12 @@ sysroot_regenerate_kargs (OstreeSysroot  *self,
 
           const char *host_karg_name = dent->d_name;
 
-
           g_autofree char *host_karg_contents = NULL;
           if (dent->d_type == DT_REG || dent->d_type == DT_LNK)
             {
               g_autofree char *host_karg_filepath =
                 g_build_filename (_OSTREE_SYSROOT_KARGS_HOST, host_karg_name, NULL);
 
-              
               host_karg_contents = glnx_file_get_contents_utf8_at (deployment_dfd,
                                                                    host_karg_filepath,
                                                                    NULL, cancellable,
@@ -3195,12 +3193,112 @@ ostree_sysroot_deployment_set_kargs (OstreeSysroot     *self,
   g_assert (!ostree_deployment_is_staged (deployment));
 
   g_autoptr(OstreeDeployment) new_deployment = ostree_deployment_clone (deployment);
+  OstreeBootconfigParser *prev_bootconfig = ostree_deployment_get_bootconfig (deployment);
   OstreeBootconfigParser *new_bootconfig = ostree_deployment_get_bootconfig (new_deployment);
 
   g_autoptr(OstreeKernelArgs) kargs = _ostree_kernel_args_new ();
   _ostree_kernel_args_append_argv (kargs, new_kargs);
   g_autofree char *new_options = _ostree_kernel_args_to_string (kargs);
-  ostree_bootconfig_parser_set (new_bootconfig, "options", new_options);
+
+  const gboolean kargs_generated_from_config = g_strcmp0 (ostree_bootconfig_parser_get (prev_bootconfig,
+                                                                         "ostree-kargs-generated-from-config"),
+                                                          "true") == 0;
+  if (kargs_generated_from_config)
+    {
+      g_autofree char *deployment_path = ostree_sysroot_get_deployment_dirpath (self, new_deployment);
+      glnx_autofd int deployment_dfd = -1;
+      if (!glnx_opendirat (self->sysroot_fd, deployment_path, TRUE, &deployment_dfd, error))
+        return FALSE;
+
+      g_auto(GLnxDirFdIterator) dfd_iter = { 0, };
+      gboolean host_dir_exists = FALSE;
+      if (!ot_dfd_iter_init_allow_noent (deployment_dfd,
+                                        _OSTREE_SYSROOT_KARGS_HOST, &dfd_iter,
+                                        &host_dir_exists, error))
+        return FALSE;
+
+      if (!host_dir_exists)
+        {
+          if (!glnx_shutil_mkdir_p_at (deployment_dfd, _OSTREE_SYSROOT_KARGS_HOST,
+                                       0777, cancellable, error))
+            return FALSE;
+        }
+
+      struct stat stbuf;
+      if (!glnx_fstatat_allow_noent (deployment_dfd, _OSTREE_SYSROOT_KARGS_BASE,
+                                     &stbuf, 0, error))
+        return FALSE;
+      const gboolean base_dir_exists = (errno == 0);
+
+      if (base_dir_exists)
+        {
+          g_autoptr(GFile) base_karg_file = get_file_from_repo (ostree_sysroot_repo (self),
+                                                                revision,
+                                                                _OSTREE_SYSROOT_KARGS_BASE,
+                                                                cancellable, error);
+
+          g_autoptr(GFileEnumerator) dir_enum = NULL;
+          g_autoptr(GFile) child = NULL;
+          g_autoptr(GFileInfo) child_info = NULL;
+          g_autoptr(GError) temp_error = NULL;
+          dir_enum = g_file_enumerate_children (base_karg_file,
+                                                OSTREE_GIO_FAST_QUERYINFO,
+                                                G_FILE_QUERY_INFO_NOFOLLOW_SYMLINKS,
+                                                cancellable, error);
+          if (!dir_enum)
+            return FALSE;
+
+          while ((child_info = g_file_enumerator_next_file (dir_enum, NULL, &temp_error)) != NULL)
+            {
+              g_clear_object (&child);
+              const char *base_karg_name = g_file_info_get_name (child_info);
+              child = g_file_get_child (base_karg_file, base_karg_name);
+
+              g_autofree char *path = g_build_filename (_OSTREE_SYSROOT_KARGS_HOST, base_karg_name, NULL);
+              g_autofree char *empty_string = g_strdup ("");
+
+              if (!glnx_file_replace_contents_at (deployment_dfd, path,
+                                                  (guint8*)empty_string,
+                                                  strlen(empty_string),
+                                                  GLNX_FILE_REPLACE_NODATASYNC,
+                                                  cancellable, error))
+                return FALSE;
+
+              g_clear_object (&child_info);
+            }
+          if (temp_error)
+            {
+              g_propagate_error (error, g_steal_pointer (&temp_error));
+              return FALSE;
+            }
+        }
+
+      g_autofree char *path = g_build_filename (_OSTREE_SYSROOT_KARGS_HOST, "4000_ostree_instutil", NULL);
+      if (!glnx_file_replace_contents_at (deployment_dfd, path,
+                                          (guint8*)new_options,
+                                          strlen(new_options),
+                                          GLNX_FILE_REPLACE_NODATASYNC,
+                                          cancellable, error))
+        return FALSE;
+
+      g_autofree char *opts = NULL;
+      if (!sysroot_regenerate_kargs (self, revision, deployment_dfd, &opts,
+                                      cancellable, error))
+        return FALSE;
+      ostree_bootconfig_parser_set (new_bootconfig, "options", opts);
+      ostree_bootconfig_parser_set_option_line (new_bootconfig, "options",
+                                                "# ostree: options generated from /usr/lib/ostree-boot/kargs.d and /etc/ostree/kargs.d");
+      ostree_bootconfig_parser_set (new_bootconfig,
+                                    "ostree-kargs-generated-from-config",
+                                    "true");
+    }
+  else
+    {
+      ostree_bootconfig_parser_set (new_bootconfig, "options", new_options);
+      ostree_bootconfig_parser_set (new_bootconfig,
+                                    "ostree-kargs-generated-from-config",
+                                    "false");
+    }
 
   g_autoptr(GPtrArray) new_deployments = g_ptr_array_new_with_free_func (g_object_unref);
   for (guint i = 0; i < self->deployments->len; i++)
