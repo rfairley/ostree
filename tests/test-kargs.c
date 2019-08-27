@@ -23,6 +23,19 @@
 #include "ostree-kernel-args.h"
 #include "otutil.h"
 
+struct _OstreeKernelArgsEntry {
+  char *key;
+  char *value;
+};
+
+static gboolean
+kargs_entry_value_equal (gconstpointer v1,
+                         gconstpointer v2)
+{
+  const OstreeKernelArgsEntry *v1_ptr = v1;
+  return g_strcmp0 (v1_ptr->value, v2) == 0;
+}
+
 static gboolean
 check_string_existance (OstreeKernelArgs *karg,
                         const char *string_to_find)
@@ -82,7 +95,7 @@ test_kargs_delete (void)
   g_assert (ret);
   /* verify the value array is properly updated */
   GPtrArray *kargs_array = _ostree_kernel_arg_get_key_array (karg);
-  g_assert (!ot_ptr_array_find_with_equal_func (kargs_array, "single_key", g_str_equal, NULL));
+  g_assert (!ot_ptr_array_find_with_equal_func (kargs_array, "single_key", kargs_entry_value_equal, NULL));
   g_assert (!check_string_existance (karg, "single_key"));
 
   /* Delete specific key/value pair */
@@ -177,12 +190,12 @@ test_kargs_replace (void)
   g_assert (check_string_existance (karg, "test=newval"));
 }
 
-static gboolean
-strcmp0_equal (gconstpointer v1,
-               gconstpointer v2)
-{
-  return g_strcmp0 (v1, v2) == 0;
-}
+// static gboolean
+// strcmp0_equal (gconstpointer v1,
+//                gconstpointer v2)
+// {
+//   return g_strcmp0 (v1, v2) == 0;
+// }
 
 /* In this function, we want to verify that ostree_kernel_args_append
  * and ostree_kernel_args_to_string is correct. After that
@@ -208,22 +221,22 @@ test_kargs_append (void)
     {
       if (g_str_equal (key, "test"))
         {
-          g_assert (ot_ptr_array_find_with_equal_func (value_array, "valid", strcmp0_equal, NULL));
-          g_assert (ot_ptr_array_find_with_equal_func (value_array, "secondvalid", strcmp0_equal, NULL));
-          g_assert (ot_ptr_array_find_with_equal_func (value_array, "", strcmp0_equal, NULL));
-          g_assert (ot_ptr_array_find_with_equal_func (value_array, NULL, strcmp0_equal, NULL));
+          g_assert (ot_ptr_array_find_with_equal_func (value_array, "valid", kargs_entry_value_equal, NULL));
+          g_assert (ot_ptr_array_find_with_equal_func (value_array, "secondvalid", kargs_entry_value_equal, NULL));
+          g_assert (ot_ptr_array_find_with_equal_func (value_array, "", kargs_entry_value_equal, NULL));
+          g_assert (ot_ptr_array_find_with_equal_func (value_array, NULL, kargs_entry_value_equal, NULL));
         }
       else
         {
           g_assert_cmpstr (key, ==, "second_test");
-          g_assert (ot_ptr_array_find_with_equal_func (value_array, NULL, strcmp0_equal, NULL));
+          g_assert (ot_ptr_array_find_with_equal_func (value_array, NULL, kargs_entry_value_equal, NULL));
         }
     }
 
   /* verify the value array is properly updated */
   GPtrArray *kargs_array = _ostree_kernel_arg_get_key_array (append_arg);
-  g_assert (ot_ptr_array_find_with_equal_func (kargs_array, "test", g_str_equal, NULL));
-  g_assert (ot_ptr_array_find_with_equal_func (kargs_array, "second_test", g_str_equal, NULL));
+  g_assert (ot_ptr_array_find_with_equal_func (kargs_array, "test", kargs_entry_value_equal, NULL));
+  g_assert (ot_ptr_array_find_with_equal_func (kargs_array, "second_test", kargs_entry_value_equal, NULL));
 
   /* Up till this point, we verified that the above was all correct, we then
    * check ostree_kernel_args_to_string has the right result
