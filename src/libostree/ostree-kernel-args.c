@@ -25,6 +25,11 @@
 
 #include <string.h>
 
+struct _OstreeKernelArgsEntry {
+  char *key;
+  char *value;
+};
+
 struct _OstreeKernelArgs {
   GPtrArray  *order;
   GHashTable *table;
@@ -84,7 +89,7 @@ ostree_kernel_args_new (void)
   ret = g_new0 (OstreeKernelArgs, 1);
   ret->order = g_ptr_array_new_with_free_func (g_free);
   ret->table = g_hash_table_new_full (g_str_hash, g_str_equal,
-                                      NULL, (GDestroyNotify)g_ptr_array_unref);
+                                      NULL, (GDestroyNotify)g_list_free); // NULL should be free func?
   return ret;
 }
 
@@ -156,6 +161,14 @@ _ostree_kernel_arg_get_key_array (OstreeKernelArgs *kargs)
   return NULL;
 }
 
+static gboolean
+kargs_entry_value_equal (gconstpointer v1,
+                         gconstpointer v2)
+{
+  const OstreeKernelArgsEntry *v1_ptr = v1;
+  return g_strcmp0 (v1_ptr->value, v2) == 0;
+}
+
 /**
  * ostree_kernel_args_new_replace:
  * @kargs: OstreeKernelArgs instance
@@ -194,10 +207,9 @@ ostree_kernel_args_new_replace (OstreeKernelArgs *kargs,
   const char *key = arg_owned;
   const char *val = split_keyeq (arg_owned);
 
-  GPtrArray *values = g_hash_table_lookup (kargs->table, key);
+  GList *values = g_hash_table_lookup (kargs->table, key);
   if (!values)
     return glnx_throw (error, "No key '%s' found", key);
-  g_assert_cmpuint (values->len, >, 0);
 
   /* first handle the case where the user just wants to replace an old value */
   if (val && strchr (val, '='))
@@ -206,22 +218,32 @@ ostree_kernel_args_new_replace (OstreeKernelArgs *kargs,
       const char *new_val = split_keyeq (old_val);
       g_assert (new_val);
 
-      guint i = 0;
-      if (!ot_ptr_array_find_with_equal_func (values, old_val, strcmp0_equal, &i))
+      GList *existing_entry = g_list_find_custom (values, old_val, kargs_entry_value_equal);
+      if (!existing_entry)
         return glnx_throw (error, "No karg '%s=%s' found", key, old_val);
 
-      g_clear_pointer (&values->pdata[i], g_free);
-      values->pdata[i] = g_strdup (new_val);
+      OstreeKernelArgsEntry *e = existing_entry->data;
+      g_assert (e->key);
+      g_clear_pointer (&e->value, g_free);
+      e->value = g_strdup (new_val);
       return TRUE;
     }
 
   /* can't know which val to replace without the old_val=new_val syntax */
-  if (values->len > 1)
+  if (g_list_length(values) > 1)
     return glnx_throw (error, "Multiple values for key '%s' found", key);
 
-  g_clear_pointer (&values->pdata[0], g_free);
-  values->pdata[0] = g_strdup (val);
+  OstreeKernelArgsEntry *e = values->data;
+  g_assert (e->key);
+  g_clear_pointer (&e->value, g_free);
+  e->value = g_strdup (val);
   return TRUE;
+}
+
+static void
+remove_from_order (gpointer data, gpointer order)
+{
+  g_assert (g_ptr_array_remove (order, data));
 }
 
 /**
@@ -246,6 +268,12 @@ ostree_kernel_args_delete_key_entry (OstreeKernelArgs *kargs,
                                      const char       *key,
                                      GError          **error)
 {
+  GList *values = g_hash_table_lookup (kargs->table, key);
+  if (!values)
+    return glnx_throw (error, "No key '%s' found", key);
+
+  g_list_foreach (values, remove_from_order, kargs->order);
+
   if (!g_hash_table_remove (kargs->table, key))
     {
       g_set_error (error, G_IO_ERROR, G_IO_ERROR_FAILED,
@@ -254,10 +282,6 @@ ostree_kernel_args_delete_key_entry (OstreeKernelArgs *kargs,
       return FALSE;
     }
 
-  /* Then remove the key from order table */
-  guint key_index;
-  g_assert (ot_ptr_array_find_with_equal_func (kargs->order, key, g_str_equal, &key_index));
-  g_assert (g_ptr_array_remove_index (kargs->order, key_index));
   return TRUE;
 }
 
@@ -294,24 +318,24 @@ ostree_kernel_args_delete (OstreeKernelArgs  *kargs,
   const char *key = arg_owned;
   const char *val = split_keyeq (arg_owned);
 
-  GPtrArray *values = g_hash_table_lookup (kargs->table, key);
+  GList *values = g_hash_table_lookup (kargs->table, key);
   if (!values)
     return glnx_throw (error, "No key '%s' found", key);
-  g_assert_cmpuint (values->len, >, 0);
 
   /* special-case: we allow deleting by key only if there's only one val */
-  if (values->len == 1)
+  if (g_list_length(values) == 1)
     {
       /* but if a specific val was passed, check that it's the same */
-      if (val && !strcmp0_equal (val, values->pdata[0]))
+      OstreeKernelArgsEntry *e = values->data;
+      if (val && !strcmp0_equal (val, e->value))
         return glnx_throw (error, "No karg '%s=%s' found", key, val);
       return ostree_kernel_args_delete_key_entry (kargs, key, error);
     }
 
   /* note val might be NULL here, in which case we're looking for `key`, not `key=` or
    * `key=val` */
-  guint i = 0;
-  if (!ot_ptr_array_find_with_equal_func (values, val, strcmp0_equal, &i))
+  GList *existing_entry = g_list_find_custom (values, val, kargs_entry_value_equal);
+  if (!existing_entry)
     {
       if (!val)
         /* didn't find NULL -> only key= key=val1 key=val2 style things left, so the user
@@ -320,7 +344,9 @@ ostree_kernel_args_delete (OstreeKernelArgs  *kargs,
       return glnx_throw (error, "No karg '%s' found", arg);
     }
 
-  g_ptr_array_remove_index (values, i);
+  g_assert (g_ptr_array_remove (kargs->order, existing_entry->data));
+  g_assert (g_list_remove_link (values, existing_entry));
+  g_list_free_1 (existing_entry);
   return TRUE;
 }
 
@@ -340,22 +366,40 @@ ostree_kernel_args_replace_take (OstreeKernelArgs   *kargs,
                                  char               *arg)
 {
   gboolean existed;
-  GPtrArray *values = g_ptr_array_new_with_free_func (g_free);
+  GList *values = NULL;
   const char *value = split_keyeq (arg);
   gpointer old_key;
 
-  g_ptr_array_add (values, g_strdup (value));
-  existed = g_hash_table_lookup_extended (kargs->table, arg, &old_key, NULL);
+  OstreeKernelArgsEntry *entry = g_new0 (OstreeKernelArgsEntry, 1);
+  entry->value = g_strdup (value);
+  entry->key = g_strdup (arg);
+  g_assert (g_list_append (values, entry));
+
+  gpointer old_values_ptr;
+  existed = g_hash_table_lookup_extended (kargs->table, arg, &old_key, &old_values_ptr);
+  GList *old_values = old_values_ptr;
 
   if (existed)
     {
+      g_assert (old_values);
+
+      guint old_order_index = 0;
+      if (!ot_ptr_array_find_with_equal_func (kargs->order, value, kargs_entry_value_equal, &old_order_index))
+        {
+          g_assert_not_reached ();
+        }
+
+      g_list_foreach (old_values, remove_from_order, kargs->order);
+
+      g_ptr_array_insert (kargs->order, old_order_index, entry);
+
       g_hash_table_replace (kargs->table, old_key, values);
       g_free (arg);
     }
   else
     {
-      g_ptr_array_add (kargs->order, arg);
       g_hash_table_replace (kargs->table, arg, values);
+      g_ptr_array_add (kargs->order, entry);
     }
 }
 
@@ -392,28 +436,32 @@ void
 ostree_kernel_args_append (OstreeKernelArgs  *kargs,
                            const char        *arg)
 {
+  g_print("here9");
   gboolean existed = TRUE;
-  GPtrArray *values;
+  GList *values = NULL;
   char *duped = g_strdup (arg);
   const char *val = split_keyeq (duped);
 
   values = g_hash_table_lookup (kargs->table, duped);
   if (!values)
     {
-      values = g_ptr_array_new_with_free_func (g_free);
       existed = FALSE;
     }
 
-  g_ptr_array_add (values, g_strdup (val));
+  OstreeKernelArgsEntry *entry = g_new0 (OstreeKernelArgsEntry, 1);
+  entry->value = g_strdup (val);
+  entry->key = g_strdup (duped);
+  g_print("here");
+  g_assert (g_list_append (values, entry));
+
+  OstreeKernelArgsEntry *e = values->data;
+  g_print ("value: %s\n", e->value);
+
+  g_ptr_array_add (kargs->order, entry);
 
   if (!existed)
     {
       g_hash_table_replace (kargs->table, duped, values);
-      g_ptr_array_add (kargs->order, duped);
-    }
-  else
-    {
-      g_free (duped);
     }
 }
 
@@ -598,20 +646,14 @@ ostree_kernel_args_to_strv (OstreeKernelArgs *kargs)
 
   for (i = 0; i < kargs->order->len; i++)
     {
-      const char *key = kargs->order->pdata[i];
-      GPtrArray *values = g_hash_table_lookup (kargs->table, key);
-      guint j;
+      OstreeKernelArgsEntry *e = kargs->order->pdata[i];
+      const char *key = e->key;
+      const char *value = e->value;
 
-      g_assert (values != NULL);
-
-      for (j = 0; j < values->len; j++)
-        {
-          const char *value = values->pdata[j];
-          if (value == NULL)
-            g_ptr_array_add (strv, g_strconcat (key, NULL));
-          else
-            g_ptr_array_add (strv, g_strconcat (key, "=", value, NULL));
-        }
+      if (value == NULL)
+        g_ptr_array_add (strv, g_strconcat (key, NULL));
+      else
+        g_ptr_array_add (strv, g_strconcat (key, "=", value, NULL));
     }
   g_ptr_array_add (strv, NULL);
 
@@ -644,29 +686,26 @@ ostree_kernel_args_to_string (OstreeKernelArgs *kargs)
 
   for (i = 0; i < kargs->order->len; i++)
     {
-      const char *key = kargs->order->pdata[i];
-      GPtrArray *values = g_hash_table_lookup (kargs->table, key);
-      guint j;
+      OstreeKernelArgsEntry *e = kargs->order->pdata[i];
+      const char *key = e->key;
+      const char *value = e->value;
 
-      g_assert (values != NULL);
+      g_print("iter: %d, key: %s, val: %s\n", i, e->key, e->value);
 
-      for (j = 0; j < values->len; j++)
+      if (first)
+        first = FALSE;
+      else
+        g_string_append_c (buf, ' ');
+
+      g_string_append (buf, key);
+      if (value != NULL)
         {
-          const char *value = values->pdata[j];
-
-          if (first)
-            first = FALSE;
-          else
-            g_string_append_c (buf, ' ');
-
-          g_string_append (buf, key);
-          if (value != NULL)
-            {
-              g_string_append_c (buf, '=');
-              g_string_append (buf, value);
-            }
+          g_string_append_c (buf, '=');
+          g_string_append (buf, value);
         }
     }
+
+  g_print("string: %s\n", buf->str);
 
   return g_string_free (buf, FALSE);
 }
@@ -688,11 +727,12 @@ ostree_kernel_args_to_string (OstreeKernelArgs *kargs)
 const char *
 ostree_kernel_args_get_last_value (OstreeKernelArgs *kargs, const char *key)
 {
-  GPtrArray *values = g_hash_table_lookup (kargs->table, key);
+  GList *values = g_hash_table_lookup (kargs->table, key);
 
   if (!values)
     return NULL;
 
-  g_assert (values->len > 0);
-  return (char*)values->pdata[values->len-1];
+  g_assert (values);
+  OstreeKernelArgsEntry *e = g_list_last(values)->data;
+  return (char*)e->value;
 }
