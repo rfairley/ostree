@@ -37,6 +37,14 @@ kargs_entry_value_equal (gconstpointer v1,
 }
 
 static gboolean
+kargs_entry_key_equal (gconstpointer v1,
+                         gconstpointer v2)
+{
+  const OstreeKernelArgsEntry *v1_ptr = v1;
+  return g_strcmp0 (v1_ptr->key, v2) == 0;
+}
+
+static gboolean
 check_string_existance (OstreeKernelArgs *karg,
                         const char *string_to_find)
 {
@@ -235,8 +243,8 @@ test_kargs_append (void)
 
   /* verify the value array is properly updated */
   GPtrArray *kargs_array = _ostree_kernel_arg_get_key_array (append_arg);
-  g_assert (ot_ptr_array_find_with_equal_func (kargs_array, "test", kargs_entry_value_equal, NULL));
-  g_assert (ot_ptr_array_find_with_equal_func (kargs_array, "second_test", kargs_entry_value_equal, NULL));
+  g_assert (ot_ptr_array_find_with_equal_func (kargs_array, "test", kargs_entry_key_equal, NULL));
+  g_assert (ot_ptr_array_find_with_equal_func (kargs_array, "second_test", kargs_entry_key_equal, NULL));
 
   /* Up till this point, we verified that the above was all correct, we then
    * check ostree_kernel_args_to_string has the right result

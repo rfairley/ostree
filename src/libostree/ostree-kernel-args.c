@@ -226,6 +226,7 @@ ostree_kernel_args_new_replace (OstreeKernelArgs *kargs,
       OstreeKernelArgsEntry *e = values->pdata[i];
       g_clear_pointer (&e->value, g_free);
       e->value = g_strdup (new_val);
+      e->key = arg_owned;
       return TRUE;
     }
 
@@ -236,6 +237,7 @@ ostree_kernel_args_new_replace (OstreeKernelArgs *kargs,
   OstreeKernelArgsEntry *e = values->pdata[0];
   g_clear_pointer (&e->value, g_free);
   e->value = g_strdup (val);
+  e->key = arg_owned;
   return TRUE;
 }
 
@@ -381,6 +383,8 @@ ostree_kernel_args_replace_take (OstreeKernelArgs   *kargs,
       g_assert (old_values);
       g_assert_cmpuint (old_values->len, >, 0);
 
+      entry->key = old_key;
+
       guint old_order_index = 0;
       if (!ot_ptr_array_find_with_equal_func (kargs->order, value, kargs_entry_value_equal, &old_order_index))
         {
@@ -401,6 +405,7 @@ ostree_kernel_args_replace_take (OstreeKernelArgs   *kargs,
     }
   else
     {
+      entry->key = arg;
       g_hash_table_replace (kargs->table, arg, values);
       g_ptr_array_add (kargs->order, entry);
     }
@@ -453,19 +458,17 @@ ostree_kernel_args_append (OstreeKernelArgs  *kargs,
 
   OstreeKernelArgsEntry *entry = g_new0 (OstreeKernelArgsEntry, 1);
   entry->value = g_strdup (val);
+  entry->key = duped;
   g_ptr_array_add (values, entry);
 
   OstreeKernelArgsEntry *e = values->pdata[0];
   g_print ("value: %s\n", e->value);
 
+  g_ptr_array_add (kargs->order, entry);
+
   if (!existed)
     {
       g_hash_table_replace (kargs->table, duped, values);
-      g_ptr_array_add (kargs->order, entry);
-    }
-  else
-    {
-      g_free (duped);
     }
 }
 
@@ -694,6 +697,8 @@ ostree_kernel_args_to_string (OstreeKernelArgs *kargs)
       const char *key = e->key;
       const char *value = e->value;
 
+      g_print("iter: %d, key: %s, val: %s\n", i, e->key, e->value);
+
       if (first)
         first = FALSE;
       else
@@ -706,6 +711,8 @@ ostree_kernel_args_to_string (OstreeKernelArgs *kargs)
           g_string_append (buf, value);
         }
     }
+
+  g_print("string: %s\n", buf->str);
 
   return g_string_free (buf, FALSE);
 }
