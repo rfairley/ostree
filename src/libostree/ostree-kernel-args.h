@@ -28,6 +28,11 @@ G_BEGIN_DECLS
 
 typedef struct _OstreeKernelArgs OstreeKernelArgs;
 
+typedef struct _OstreeKernelArgsEntry {
+  char *key;
+  char *value;
+} OstreeKernelArgsEntry;
+
 GHashTable *_ostree_kernel_arg_get_kargs_table (OstreeKernelArgs *kargs);
 
 GPtrArray *_ostree_kernel_arg_get_key_array (OstreeKernelArgs *kargs);
